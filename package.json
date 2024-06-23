@@ -1,0 +1,13 @@
+{
+  "name": "com.pierotechnical.buildandupload",
+  "version": "1.0.0",
+  "displayName": "Build and Upload Automation Tool",
+  "description": "A tool to automate building and uploading projects to itch.io.",
+  "unity": "2020.3",
+  "author": {
+    "name": "Daniel Piero Montemiglio",
+    "email": "daniel@pierotechnical.com",
+    "url": "https://pierotechnical.com"
+  },
+  "dependencies": {}
+}
