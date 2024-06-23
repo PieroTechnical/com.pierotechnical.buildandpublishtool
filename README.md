@@ -18,7 +18,7 @@ The Build and Upload Automation Tool is a Unity Editor extension that streamline
 
 ## Usage
 
-- **Set Up:** Ensure the Butler executable path is set up correctly. If not, you will be prompted to locate it. Currently, you must ensure that the organization and game name in your Unity Project Settings match those of your itch.io project (ie. (organization).itch.io/(game name).
+- **Set Up:** Ensure the Butler executable path is set up correctly. If not, you will be prompted to locate it. Currently, you must ensure that the organization and game name in your Unity Project Settings match those of your itch.io project (ie. [organization].itch.io/[game name]).
 - **Manage Version:** Use the version controls to update the version number as needed. The version is automatically saved to `Assets/version.txt`.
 - **Select Platforms:** Choose the platforms you want to build for (Windows, Mac, Linux).
 - **Build and Upload:** Click the build buttons to start building and uploading your game to itch.io. The tool will handle the rest, including creating a zip file and uploading it.
