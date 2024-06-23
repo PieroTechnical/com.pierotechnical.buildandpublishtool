@@ -1,5 +1,5 @@
 {
-  "name": "com.pierotechnical.buildanduploadtool",
+  "name": "com.pierotechnical.buildandpublishtool",
   "version": "1.0.0",
   "displayName": "Build Automation and Publish Tool",
   "description": "A tool to automate building and uploading projects to itch.io.",
