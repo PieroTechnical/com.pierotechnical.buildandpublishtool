@@ -6,7 +6,7 @@ The Build and Upload Automation Tool is a Unity Editor extension that streamline
 
 - **Version Management:** Automatically update and save version numbers with options to increment minor and fix versions.
 - **Multi-Platform Build:** Support for building and uploading for Windows, Mac, and Linux platforms.
-- **Automated Uploads:** Integrates with itch.io's Butler tool to automate the upload of your game builds.
+- **Automated Uploads:** Integrates with itch.io's Butler tool to automate your game build upload.
 - **Versioned Backups:** Stores backup zip files with version numbers in a dedicated `_versions` subfolder for better organization.
 - **User-Friendly Interface:** Provides a clean and intuitive GUI within the Unity Editor to manage builds and uploads efficiently.
 
@@ -14,6 +14,7 @@ The Build and Upload Automation Tool is a Unity Editor extension that streamline
 
 1. Download or clone the repository into your Unity project's `Packages` folder.
 2. Open Unity and navigate to `Tools > Build and Upload Automation Tool` to open the tool window.
+3. The first time you use the tool, it will ask you to locate the butler.exe executable.
 
 ## Usage
 
@@ -25,7 +26,7 @@ The Build and Upload Automation Tool is a Unity Editor extension that streamline
 ## Requirements
 
 - Unity 2018.4 or higher
-- Butler (itch.io command-line tool)
+- [Butler (itch.io command-line tool)](https://itchio.itch.io/butler)
 
 ## Contribution
 
