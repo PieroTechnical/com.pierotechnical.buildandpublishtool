@@ -1,7 +1,7 @@
 {
-  "name": "com.pierotechnical.buildandupload",
+  "name": "com.pierotechnical.buildanduploadtool",
   "version": "1.0.0",
-  "displayName": "Build and Upload Automation Tool",
+  "displayName": "Build Automation and Publish Tool",
   "description": "A tool to automate building and uploading projects to itch.io.",
   "unity": "2020.3",
   "author": {
