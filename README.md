@@ -5,6 +5,7 @@ The Build Automation and Publish Tool is a Unity Editor extension that streamlin
 ## Features
 
 - **Version Management:** Automatically update and save version numbers with options to increment minor and fix versions.
+- **Automatically Excludes Unwanted Folders:** _BackUpThisFolder_ButDontShipItWithYourGame and _BurstDebugInformation_DoNotShip folders are excluded from the zipping process, meaning they do not get uploaded to Itch.io.
 - **Multi-Platform Build:** Currently supports building for Windows, with Mac and Linux on the immediate horizon.
 - **Automated Uploads:** Integrates with itch.io's Butler tool to automate your game build upload.
 - **Versioned Backups:** Stores backups of each version in your build directory so you can go back and experience your game at previous stages.
