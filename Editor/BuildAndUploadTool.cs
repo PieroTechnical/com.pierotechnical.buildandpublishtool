@@ -14,50 +14,78 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         private string buildsFolderPath;
         private const string ButlerPathKey = "ButlerPath";
         private const string VersionFilePath = "Assets/version.txt";
+        private string gameName;
+        private string organizationName;
         private string version = "0.1.0";
-        private string previousVersion; // Store the previous version to detect changes
+        private string previousVersion;
 
         private bool buildWindows = true;
         private bool buildMac = false;
         private bool buildLinux = false;
 
-        [MenuItem("Tools/Build and Upload Automation Tool %#u")] // Ctrl + Shift + U
+        [MenuItem("Tools/Build Automation and Publish Tool %#u")] // Ctrl + Shift + U
         public static void ShowWindow()
         {
-            var window = GetWindow<BuildAndUploadTool>("Build and Upload Automation Tool");
-            window.LoadVersion(); // Ensure the latest version is loaded when the window is opened
+            var window = GetWindow<BuildAndUploadTool>("Build Automation and Publish Tool");
+            window.LoadOptions();
         }
 
         void OnEnable()
         {
             string projectPath = Application.dataPath;
             buildsFolderPath = Path.Combine(Directory.GetParent(projectPath).FullName, "Builds");
-            LoadVersion();
-            previousVersion = version; // Initialize previousVersion
+            LoadOptions();
+            previousVersion = version;
         }
 
         void OnGUI()
         {
-            GUILayout.Label("Build and Upload Automation Tool", EditorStyles.boldLabel);
-            DrawVersionControls();
+            DrawTitle();
+
+            DrawProjectOptions();
             DrawBuildOptions();
             DrawBuildButton();
             CheckVersionAndUpdate();
+        }
+
+        private static void DrawTitle()
+        {
+            GUILayout.Label("Build Automation and Publish Tool (PieroTechnical)",
+                            EditorStyles.largeLabel,
+                            GUILayout.ExpandWidth(true));
         }
 
         private void CheckVersionAndUpdate()
         {
             if (version != previousVersion)
             {
-                SaveVersion();
-                previousVersion = version; // Update the previousVersion after saving
+                SaveOptions();
+                previousVersion = version;
             }
         }
 
-        private void DrawVersionControls()
+        private void DrawProjectOptions()
         {
+            GUILayout.Space(5);
+            GUILayout.Label("Project Options:", EditorStyles.boldLabel);
+
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Version:", GUILayout.Width(50));
+            GUILayout.Label("Username:", GUILayout.Width(100));
+            organizationName = GUILayout.TextField(organizationName, GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Game Title:", GUILayout.Width(100));
+            gameName = GUILayout.TextField(gameName, GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Game URL:", GUILayout.Width(100));
+            GUILayout.Label($"https://{organizationName}.itch.io/{gameName}".ToLower());
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Version:", GUILayout.Width(100));
             version = GUILayout.TextField(version, GUILayout.ExpandWidth(true));
             if (GUILayout.Button("Increment Minor", GUILayout.ExpandWidth(true)))
             {
@@ -68,10 +96,14 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 IncrementPatchVersion();
             }
             GUILayout.EndHorizontal();
+
+
         }
 
         private void DrawBuildOptions()
         {
+            GUILayout.Space(5);
+            GUILayout.Label("Build Options:", EditorStyles.boldLabel);
             DrawPlatformBuildOption("Build and Upload for Windows", BuildAndUploadWindows, ref buildWindows);
             DrawPlatformBuildOption("Build and Upload for Mac", BuildAndUploadMac, ref buildMac, Application.platform == RuntimePlatform.OSXEditor);
             DrawPlatformBuildOption("Build and Upload for Linux", BuildAndUploadLinux, ref buildLinux, false);
@@ -84,7 +116,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
             if (GUILayout.Button(buttonText, GUILayout.ExpandWidth(true)))
             {
-                Debug.Log($"Building for {buttonText.Split(' ')[4]}..."); // Assumes the platform name is the fifth word in the button text
+                Debug.Log($"Building for {buttonText.Split(' ')[4]}...");
                 buildAction();
             }
 
@@ -108,32 +140,26 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         private void UploadToItch(string filePath)
         {
-            string butlerPath = System.Environment.GetEnvironmentVariable("ButlerPath");
+            string butlerPath = PlayerPrefs.GetString(ButlerPathKey, null);
             if (string.IsNullOrEmpty(butlerPath))
             {
-                butlerPath = PlayerPrefs.GetString(ButlerPathKey, null);
-                if (string.IsNullOrEmpty(butlerPath))
+                butlerPath = EditorUtility.OpenFilePanel("Locate butler executable", "", "exe");
+                if (!string.IsNullOrEmpty(butlerPath))
                 {
-                    butlerPath = EditorUtility.OpenFilePanel("Locate butler executable", "", "exe");
-                    if (!string.IsNullOrEmpty(butlerPath))
-                    {
-                        PlayerPrefs.SetString(ButlerPathKey, butlerPath);
-                        PlayerPrefs.Save();
-                    }
-                    else
-                    {
-                        Debug.LogError("Butler executable not located. Upload cancelled.");
-                        return;
-                    }
+                    PlayerPrefs.SetString(ButlerPathKey, butlerPath);
+                    PlayerPrefs.Save();
+                }
+                else
+                {
+                    Debug.LogError("Butler executable not located. Upload cancelled.");
+                    return;
                 }
             }
 
             Debug.Log($"Using ButlerPath: {butlerPath}");
             string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
-            string user = "pierotechnical";
-            string game = "grib";
             string channel = fileNameWithoutExtension.ToLower();
-            string cmdArgs = $"push \"{filePath}\" {user}/{game}:{channel} --userversion {version}";
+            string cmdArgs = $"push \"{filePath}\" {organizationName}/{gameName}:{channel} --userversion {version}";
 
             try
             {
@@ -146,9 +172,13 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 process.StartInfo.CreateNoWindow = true;
                 process.Start();
 
+                EditorUtility.DisplayProgressBar("Uploading to itch.io", "Uploading...", 0.5f);
+
                 string output = process.StandardOutput.ReadToEnd();
                 string error = process.StandardError.ReadToEnd();
                 process.WaitForExit();
+
+                EditorUtility.ClearProgressBar();
 
                 if (process.ExitCode == 0)
                 {
@@ -161,6 +191,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
             catch (System.Exception e)
             {
+                EditorUtility.ClearProgressBar();
                 Debug.LogError($"Exception during Butler upload: {e.Message}");
             }
         }
@@ -173,7 +204,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             bool success = true;
             string errorMessage = "";
 
-            success &= BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneWindows64, "windows", "Game.exe", ScriptingImplementation.IL2CPP, ref errorMessage);
+            success &= BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneWindows64, "windows", $"{gameName}.exe", ScriptingImplementation.IL2CPP, ref errorMessage);
 
             if (success)
             {
@@ -210,33 +241,23 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
         }
 
-        private void TryMonoFallback(string buildPath, string[] scenes, string channel, string executableName, ref string errorMessage)
+        private void BuildAndUploadLinux()
         {
-            if (IsMonoInstalled(BuildTarget.StandaloneOSX))
-            {
-                if (!BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneOSX, channel, executableName, ScriptingImplementation.Mono2x, ref errorMessage))
-                {
-                    Debug.LogError("Mono build failed: " + errorMessage);
-                }
-            }
-            else
-            {
-                errorMessage = "Mono is not installed.";
-                Debug.LogError(errorMessage);
-            }
-        }
+            string[] scenes = GetBuildScenes();
+            string buildPath = buildsFolderPath;
 
-        private bool BuildWithMono(string buildPath, string[] scenes, string channel, string executableName, ref string errorMessage)
-        {
-            if (IsMonoInstalled(BuildTarget.StandaloneOSX))
+            bool success = true;
+            string errorMessage = "";
+
+            success &= BuildAndUploadWithFallback(buildPath, scenes, BuildTarget.StandaloneLinux64, "linux", "Game.x86_64", ref errorMessage);
+
+            if (success)
             {
-                return BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneOSX, channel, executableName, ScriptingImplementation.Mono2x, ref errorMessage);
+                Debug.Log("Build uploaded to itch.io successfully!");
             }
             else
             {
-                errorMessage = "Mono is not installed.";
-                Debug.LogError("Build failed: " + errorMessage);
-                return false; // Indicate failure
+                Debug.LogError($"Build failed to upload:\n{errorMessage}");
             }
         }
 
@@ -280,48 +301,6 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             return PlayerSettings.GetScriptingBackend(BuildPipeline.GetBuildTargetGroup(target)) == ScriptingImplementation.Mono2x;
         }
 
-        private void BuildAndUploadLinux()
-        {
-            string[] scenes = GetBuildScenes();
-            string buildPath = buildsFolderPath;
-
-            bool success = true;
-            string errorMessage = "";
-
-            success &= BuildAndUploadWithFallback(buildPath, scenes, BuildTarget.StandaloneLinux64, "linux", "Game.x86_64", ref errorMessage);
-
-            if (success)
-            {
-                Debug.Log("Build uploaded to itch.io successfully!");
-            }
-            else
-            {
-                Debug.LogError($"Build failed to upload:\n{errorMessage}");
-            }
-        }
-
-        private void BuildAndUploadAll()
-        {
-            string[] scenes = GetBuildScenes();
-            string buildPath = buildsFolderPath;
-
-            bool success = true;
-            string errorMessage = "";
-
-            success &= BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneWindows64, "windows", "Game.exe", ScriptingImplementation.IL2CPP, ref errorMessage);
-            success &= BuildAndUploadWithFallback(buildPath, scenes, BuildTarget.StandaloneOSX, "mac", "Game.app", ref errorMessage);
-            success &= BuildAndUploadWithFallback(buildPath, scenes, BuildTarget.StandaloneLinux64, "linux", "Game.x86_64", ref errorMessage);
-
-            if (success)
-            {
-                Debug.Log("All builds uploaded to itch.io successfully!");
-            }
-            else
-            {
-                Debug.LogError($"Some builds failed to upload:\n{errorMessage}");
-            }
-        }
-
         private bool BuildAndUploadWithFallback(string buildPath, string[] scenes, BuildTarget target, string channel, string fileName, ref string errorMessage)
         {
             bool success = false;
@@ -356,19 +335,16 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             string zipFilePath = buildFolder + ".zip";
             CreateZipFile(buildFolder, zipFilePath);
 
-            // Ensure the _versions directory exists
             string versionsDirectoryPath = Path.Combine(buildsFolderPath, "_versions");
             if (!Directory.Exists(versionsDirectoryPath))
             {
                 Directory.CreateDirectory(versionsDirectoryPath);
             }
 
-            // Adjust the path for the versioned zip file to include the _versions subfolder
             string platformName = GetPlatformName(channel);
             string versionedZipFileName = $"Grib_{platformName}_{version}.zip";
             string copyFilePath = Path.Combine(versionsDirectoryPath, versionedZipFileName);
 
-            // Check if file already exists and delete it to avoid IOException on copy
             if (File.Exists(copyFilePath))
             {
                 File.Delete(copyFilePath);
@@ -392,6 +368,8 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 Directory.CreateDirectory(sourcePath);
             }
 
+            EditorUtility.DisplayProgressBar("Zipping Files", "Creating zip archive...", 0.5f);
+
             using (var archive = ZipFile.Open(destinationPath, ZipArchiveMode.Create))
             {
                 foreach (string file in Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories))
@@ -403,12 +381,14 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                     archive.CreateEntryFromFile(file, entryName);
                 }
             }
+
+            EditorUtility.ClearProgressBar();
             Debug.Log($"Created zip file at {destinationPath}");
         }
 
         private bool IsExcludedFileOrDirectory(string entryName)
         {
-            string[] excludedFolders = { "Game_BackUpThisFolder_ButDontShipItWithYourGame", "Game_BurstDebugInformation_DoNotShip" };
+            string[] excludedFolders = { "Grib_BackUpThisFolder_ButDontShipItWithYourGame", "Game_BurstDebugInformation_DoNotShip" };
             return excludedFolders.Any(folder => entryName.Contains(folder));
         }
 
@@ -427,23 +407,26 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
         }
 
-        private void LoadVersion()
+        private void LoadOptions()
         {
+
+            gameName = PlayerSettings.productName;
+            organizationName = PlayerSettings.companyName;
+
             if (File.Exists(VersionFilePath))
             {
                 version = File.ReadAllText(VersionFilePath).Trim();
-                previousVersion = version; // Ensure previousVersion is also updated when loading
+                previousVersion = version;
             }
             else
             {
-                SaveVersion();
+                SaveOptions();
             }
         }
 
-        private void SaveVersion()
+        private void SaveOptions()
         {
             File.WriteAllText(VersionFilePath, version);
-            Debug.Log("Version saved: " + version); // Optionally log that the version was saved
         }
 
         private void IncrementMinorVersion()
@@ -453,7 +436,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             {
                 minorVersion++;
                 version = $"{versionParts[0]}.{minorVersion}.0";
-                SaveVersion();
+                SaveOptions();
             }
             else
             {
@@ -468,7 +451,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             {
                 patchVersion++;
                 version = $"{versionParts[0]}.{versionParts[1]}.{patchVersion}";
-                SaveVersion();
+                SaveOptions();
             }
             else
             {
