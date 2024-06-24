@@ -342,7 +342,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
 
             string platformName = GetPlatformName(channel);
-            string versionedZipFileName = $"Grib_{platformName}_{version}.zip";
+            string versionedZipFileName = $"{gameName}_{platformName}_{version}.zip";
             string copyFilePath = Path.Combine(versionsDirectoryPath, versionedZipFileName);
 
             if (File.Exists(copyFilePath))
@@ -388,7 +388,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         private bool IsExcludedFileOrDirectory(string entryName)
         {
-            string[] excludedFolders = { "Grib_BackUpThisFolder_ButDontShipItWithYourGame", "Game_BurstDebugInformation_DoNotShip" };
+            string[] excludedFolders = { $"{gameName}_BackUpThisFolder_ButDontShipItWithYourGame", $"{gameName}_BurstDebugInformation_DoNotShip" };
             return excludedFolders.Any(folder => entryName.Contains(folder));
         }
 
