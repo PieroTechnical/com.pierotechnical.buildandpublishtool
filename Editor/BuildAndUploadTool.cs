@@ -70,21 +70,6 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             GUILayout.Label("Project Options:", EditorStyles.boldLabel);
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Username:", GUILayout.Width(100));
-            organizationName = GUILayout.TextField(organizationName, GUILayout.ExpandWidth(true));
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Game Title:", GUILayout.Width(100));
-            gameName = GUILayout.TextField(gameName, GUILayout.ExpandWidth(true));
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Game URL:", GUILayout.Width(100));
-            GUILayout.Label($"https://{organizationName}.itch.io/{gameName}".ToLower());
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
             GUILayout.Label("Version:", GUILayout.Width(100));
             version = GUILayout.TextField(version, GUILayout.ExpandWidth(true));
             if (GUILayout.Button("Increment Minor", GUILayout.ExpandWidth(true)))
@@ -97,7 +82,35 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
             GUILayout.EndHorizontal();
 
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Username:", GUILayout.Width(100));
+            organizationName = GUILayout.TextField(organizationName, GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
 
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Game Title:", GUILayout.Width(100));
+            gameName = GUILayout.TextField(gameName, GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Game URL:", GUILayout.Width(100));
+            if (GUILayout.Button(GenerateURL(), EditorStyles.linkLabel))
+            {
+                Application.OpenURL(GenerateURL());
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(2);
+        }
+
+        private string GenerateURL()
+        {
+            return FormatURL($"https://{organizationName}.itch.io/{gameName}");
+        }
+
+        private string FormatURL(string input)
+        {
+            return input.ToLower().Replace(" ", "-");
         }
 
         private void DrawBuildOptions()
@@ -159,7 +172,8 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             Debug.Log($"Using ButlerPath: {butlerPath}");
             string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
             string channel = fileNameWithoutExtension.ToLower();
-            string cmdArgs = $"push \"{filePath}\" {organizationName}/{gameName}:{channel} --userversion {version}";
+
+            string cmdArgs = $"push \"{filePath}\" {FormatURL(organizationName)}/{FormatURL(gameName)}:{channel} --userversion {version}";
 
             try
             {
@@ -182,7 +196,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
                 if (process.ExitCode == 0)
                 {
-                    Debug.Log($"Butler upload successful:\n{output}");
+                    Debug.Log($"Butler upload finished:\n{output}");
                 }
                 else
                 {
