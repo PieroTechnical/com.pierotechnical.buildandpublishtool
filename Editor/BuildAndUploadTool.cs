@@ -22,6 +22,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         private bool buildWindows = true;
         private bool buildMac = false;
         private bool buildLinux = false;
+        private bool buildWebGL = false;
 
         [MenuItem("Tools/Build Automation and Publish Tool %#u")] // Ctrl + Shift + U
         public static void ShowWindow()
@@ -32,7 +33,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         void OnEnable()
         {
-            string projectPath = Application.dataPath;
+            string projectPath = UnityEngine.Application.dataPath;
             buildsFolderPath = Path.Combine(Directory.GetParent(projectPath).FullName, "Builds");
             LoadOptions();
             previousVersion = version;
@@ -96,7 +97,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             GUILayout.Label("Game URL:", GUILayout.Width(100));
             if (GUILayout.Button(GenerateURL(), EditorStyles.linkLabel))
             {
-                Application.OpenURL(GenerateURL());
+                UnityEngine.Application.OpenURL(GenerateURL());
             }
             GUILayout.EndHorizontal();
 
@@ -118,8 +119,9 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             GUILayout.Space(5);
             GUILayout.Label("Build Options:", EditorStyles.boldLabel);
             DrawPlatformBuildOption("Build and Upload for Windows", BuildAndUploadWindows, ref buildWindows);
-            DrawPlatformBuildOption("Build and Upload for Mac", BuildAndUploadMac, ref buildMac, Application.platform == RuntimePlatform.OSXEditor);
+            DrawPlatformBuildOption("Build and Upload for Mac", BuildAndUploadMac, ref buildMac, UnityEngine.Application.platform == RuntimePlatform.OSXEditor);
             DrawPlatformBuildOption("Build and Upload for Linux", BuildAndUploadLinux, ref buildLinux, false);
+            DrawPlatformBuildOption("Build and Upload for WebGL", BuildAndUploadWebGL, ref buildWebGL);
         }
 
         private void DrawPlatformBuildOption(string buttonText, Action buildAction, ref bool buildToggle, bool isEnabled = true)
@@ -139,7 +141,6 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             GUILayout.EndHorizontal();
         }
 
-
         private void DrawBuildButton()
         {
             if (GUILayout.Button("Build and Upload Selected Platforms", GUILayout.ExpandWidth(true)))
@@ -148,6 +149,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 if (buildWindows) BuildAndUploadWindows();
                 if (buildMac) BuildAndUploadMac();
                 if (buildLinux) BuildAndUploadLinux();
+                if (buildWebGL) BuildAndUploadWebGL();
             }
         }
 
@@ -214,11 +216,12 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         {
             string[] scenes = GetBuildScenes();
             string buildPath = buildsFolderPath;
-
-            bool success = true;
             string errorMessage = "";
 
-            success &= BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneWindows64, "windows", $"{gameName}.exe", ScriptingImplementation.IL2CPP, ref errorMessage);
+            // Use a unique directory name for Windows builds
+            string buildDirectoryName = $"{gameName}_Windows";
+
+            bool success = BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneWindows64, "windows", buildDirectoryName, ScriptingImplementation.IL2CPP, ref errorMessage);
 
             if (success)
             {
@@ -232,7 +235,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         private void BuildAndUploadMac()
         {
-            if (Application.platform != RuntimePlatform.OSXEditor)
+            if (UnityEngine.Application.platform != RuntimePlatform.OSXEditor)
             {
                 Debug.LogError("Mac builds can only be performed on a Mac system.");
                 return;
@@ -244,7 +247,10 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
             if (IsIL2CPPInstalled(BuildTarget.StandaloneOSX))
             {
-                if (!BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneOSX, "mac", "Game.app", ScriptingImplementation.IL2CPP, ref errorMessage))
+                // Use a unique directory name for Mac builds
+                string buildDirectoryName = $"{gameName}_Mac";
+
+                if (!BuildAndUpload(buildPath, scenes, BuildTarget.StandaloneOSX, "mac", buildDirectoryName, ScriptingImplementation.IL2CPP, ref errorMessage))
                 {
                     Debug.LogError("IL2CPP build failed: " + errorMessage);
                 }
@@ -259,11 +265,12 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         {
             string[] scenes = GetBuildScenes();
             string buildPath = buildsFolderPath;
-
-            bool success = true;
             string errorMessage = "";
 
-            success &= BuildAndUploadWithFallback(buildPath, scenes, BuildTarget.StandaloneLinux64, "linux", "Game.x86_64", ref errorMessage);
+            // Use a unique directory name for Linux builds
+            string buildDirectoryName = $"{gameName}_Linux";
+
+            bool success = BuildAndUploadWithFallback(buildPath, scenes, BuildTarget.StandaloneLinux64, "linux", buildDirectoryName, ref errorMessage);
 
             if (success)
             {
@@ -275,18 +282,61 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
         }
 
-        private bool BuildAndUpload(string buildPath, string[] scenes, BuildTarget target, string channel, string executableName, ScriptingImplementation backend, ref string errorMessage)
+        private void BuildAndUploadWebGL()
         {
-            string targetPath = Path.Combine(buildPath, channel, executableName);
+            string[] scenes = GetBuildScenes();
+            string buildPath = buildsFolderPath;
+            string errorMessage = "";
+
+            // Use a unique directory name for WebGL builds
+            string buildDirectoryName = $"{gameName}_WebGL";
+
+            bool success = BuildAndUpload(buildPath, scenes, BuildTarget.WebGL, "webgl", buildDirectoryName, ScriptingImplementation.Mono2x, ref errorMessage);
+
+            if (success)
+            {
+                Debug.Log("Build uploaded to itch.io successfully!");
+            }
+            else
+            {
+                Debug.LogError($"Build failed to upload:\n{errorMessage}");
+            }
+        }
+
+        private bool BuildAndUpload(string buildPath, string[] scenes, BuildTarget target, string channel, string buildDirectoryName, ScriptingImplementation backend, ref string errorMessage)
+        {
+            // Ensure the build target is set correctly
+            if (EditorUserBuildSettings.activeBuildTarget != target)
+            {
+                EditorUserBuildSettings.SwitchActiveBuildTarget(BuildPipeline.GetBuildTargetGroup(target), target);
+            }
+
+            // Set the correct scripting backend
+            PlayerSettings.SetScriptingBackend(BuildPipeline.GetBuildTargetGroup(target), backend);
+
+            string targetPath = Path.Combine(buildPath, buildDirectoryName);
+
+            // Check if the target path exists as a file or directory and remove it if necessary
+            if (File.Exists(targetPath))
+            {
+                File.Delete(targetPath);
+            }
+            else if (Directory.Exists(targetPath))
+            {
+                Directory.Delete(targetPath, true);
+            }
+
+            // Ensure the directory exists
+            Directory.CreateDirectory(targetPath);
+
             BuildPlayerOptions buildPlayerOptions = new BuildPlayerOptions
             {
                 scenes = scenes,
                 locationPathName = targetPath,
                 target = target,
                 options = BuildOptions.None,
-                targetGroup = BuildTargetGroup.Standalone
+                targetGroup = BuildPipeline.GetBuildTargetGroup(target)
             };
-            PlayerSettings.SetScriptingBackend(BuildPipeline.GetBuildTargetGroup(target), backend);
 
             var report = BuildPipeline.BuildPlayer(buildPlayerOptions);
             if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
@@ -298,7 +348,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
             else
             {
-                ZipAndUpload(Path.Combine(buildPath, channel), channel, version);
+                ZipAndUpload(targetPath, channel, version);
                 return true;
             }
         }
@@ -315,17 +365,17 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             return PlayerSettings.GetScriptingBackend(BuildPipeline.GetBuildTargetGroup(target)) == ScriptingImplementation.Mono2x;
         }
 
-        private bool BuildAndUploadWithFallback(string buildPath, string[] scenes, BuildTarget target, string channel, string fileName, ref string errorMessage)
+        private bool BuildAndUploadWithFallback(string buildPath, string[] scenes, BuildTarget target, string channel, string buildDirectoryName, ref string errorMessage)
         {
             bool success = false;
             if (IsIL2CPPInstalled(target))
             {
-                success = BuildAndUpload(buildPath, scenes, target, channel, fileName, ScriptingImplementation.IL2CPP, ref errorMessage);
+                success = BuildAndUpload(buildPath, scenes, target, channel, buildDirectoryName, ScriptingImplementation.IL2CPP, ref errorMessage);
             }
 
             if (!success && IsMonoInstalled(target))
             {
-                success = BuildAndUpload(buildPath, scenes, target, channel, fileName, ScriptingImplementation.Mono2x, ref errorMessage);
+                success = BuildAndUpload(buildPath, scenes, target, channel, buildDirectoryName, ScriptingImplementation.Mono2x, ref errorMessage);
             }
 
             return success;
@@ -416,6 +466,8 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                     return "Mac";
                 case "linux":
                     return "Linux";
+                case "webgl":
+                    return "WebGL";
                 default:
                     return "UnknownPlatform";
             }
@@ -423,7 +475,6 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         private void LoadOptions()
         {
-
             gameName = PlayerSettings.productName;
             organizationName = PlayerSettings.companyName;
 
