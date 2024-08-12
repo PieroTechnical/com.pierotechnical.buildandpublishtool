@@ -8,7 +8,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 {
     public class BuildManager : EditorWindow
     {
-        public const string ButlerPathKey = "ButlerPath"; // Make this public for access in other classes
+        public const string ButlerPathKey = "ButlerPath"; 
         private List<IBuildPlatform> platforms = new();
         private string buildsFolderPath;
         private const string VersionFilePath = "Assets/version.txt";
@@ -26,7 +26,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         void OnEnable()
         {
-            string projectPath = UnityEngine.Application.dataPath; // Use explicit reference to UnityEngine.Application
+            string projectPath = UnityEngine.Application.dataPath;
             buildsFolderPath = Path.Combine(Directory.GetParent(projectPath).FullName, "Builds");
             LoadOptions();
             previousVersion = version;

@@ -138,7 +138,8 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Build and Upload for Windows", GUILayout.ExpandWidth(true)))
             {
-                IsEnabled = true;
+                Build();
+                Upload();
             }
             IsEnabled = EditorGUILayout.Toggle(IsEnabled, GUILayout.Width(20));
             GUILayout.EndHorizontal();
@@ -160,7 +161,8 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Build and Upload for Mac", GUILayout.ExpandWidth(true)))
             {
-                IsEnabled = true;
+                Build();
+                Upload();
             }
             IsEnabled = EditorGUILayout.Toggle(IsEnabled, GUILayout.Width(20));
             GUILayout.EndHorizontal();
@@ -182,7 +184,8 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Build and Upload for Linux", GUILayout.ExpandWidth(true)))
             {
-                IsEnabled = true;
+                Build();
+                Upload();
             }
             IsEnabled = EditorGUILayout.Toggle(IsEnabled, GUILayout.Width(20));
             GUILayout.EndHorizontal();
@@ -204,7 +207,8 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Build and Upload for WebGL", GUILayout.ExpandWidth(true)))
             {
-                IsEnabled = true;
+                Build();
+                Upload();
             }
             IsEnabled = EditorGUILayout.Toggle(IsEnabled, GUILayout.Width(20));
             GUILayout.EndHorizontal();
