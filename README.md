@@ -14,9 +14,14 @@ The Build Automation and Publish Tool is a Unity Editor extension that streamlin
 ## Installation
 
 1. Download or clone the repository into your Unity project's `Packages` folder.
-2. Open Unity and navigate to `Tools > Build Automation and Publish Tool` to open the tool window.
-3. The first time you use the tool, it will ask you to locate the butler.exe executable.
 
+Alternatively, in unity editor inside package manager:
+1. Hit `(+)` and select `Add package from Git URL` 
+2. Paste the `git URL` for this package: https://github.com/PieroTechnical/com.pierotechnical.buildandpublishtool.git and hit `Add`
+
+After installation, navigate to `Tools > Build Automation and Publish Tool` to open the tool window.
+
+*The first time you use the tool, it will ask you to locate the **butler.exe** executable.*
 ## Usage
 
 - **Set Up:** Ensure the Butler executable path is set up correctly. If not, you will be prompted to locate it. Currently, you'll need to make sure that the organization and game name in your Unity Project Settings matches those of your itch.io project (ie. [organization].itch.io/[game name]).
