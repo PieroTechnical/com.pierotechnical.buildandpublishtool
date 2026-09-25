@@ -1,0 +1,23 @@
+{
+    "name": "com.pierotechnical.buildandpublishtool.editor.tests",
+    "rootNamespace": "",
+    "references": [
+        "com.pierotechnical.buildandpublishtool.editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}
