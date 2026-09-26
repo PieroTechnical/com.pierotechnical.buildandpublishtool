@@ -2,7 +2,7 @@ using System;
 
 namespace Pierotechnical.BuildAndUploadTool.Editor
 {
-    public static class PublishExclusions
+    internal static class PublishExclusions
     {
         static readonly string[] FolderSuffixes =
         {

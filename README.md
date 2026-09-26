@@ -1,68 +1,140 @@
-![image](https://github.com/user-attachments/assets/fafe03cd-a4f8-4001-8d8e-820f00dcb532)
+# Build and Publish
 
-# Build Automation and Publish Tool
+Build and Publish is a Unity Editor package for recoverable, sequential builds
+and explicit publishing to itch.io and Steam.
 
-The Build Automation and Publish Tool is a Unity Editor extension that builds a project for Windows, Mac, Linux, and WebGL, keeps each successful build in a versioned folder, and can upload that build to itch.io with Butler or to Steam with steamcmd.
+![Build and Publish window](https://github.com/user-attachments/assets/fafe03cd-a4f8-4001-8d8e-820f00dcb532)
 
-## Features
+## Highlights
 
-- **Version management:** Edit a `major.minor.patch` version, or increment the minor or patch number. The value is saved to `Assets/version.txt` and to Player Settings as the bundle version.
-- **Versioned builds:** A successful build is stored at `Builds/<game>/<version>/<platform>/`. The previous folder for that version is replaced only after the new build succeeds.
-- **Upload exclusions:** Folders whose names end with `_DoNotShip`, `BackUpThisFolder_ButDontShipItWithYourGame`, or `BurstDebugInformation_DoNotShip` stay in the local build and are left out of itch.io and Steam uploads.
-- **Multi-platform builds:** Windows, Mac, Linux, and WebGL. The tool switches build targets and resumes after the Editor reloads, so a batch can finish more than the first platform.
-- **Build, or build and upload:** Each platform can be built locally, or built and uploaded to the destinations that are turned on (itch.io, Steam, or both). Selected platforms can be run the same way. A failed build is not uploaded.
-- **Butler uploads:** The itch.io upload sends the staged build folder to Butler (`butler push`), which keeps macOS and Linux executable permissions intact. The itch target is the username and game title shown in the window.
-- **Steam uploads:** After every selected platform has finished, steamcmd uploads the successful Windows, Mac, and Linux builds as one SteamPipe app build. WebGL is not uploaded to Steam. Leave the branch blank to upload without setting the build live. The `default` branch cannot be set live from steamcmd. Later uploads of the same App ID reuse a chunk cache in `Builds/.steam-cache`. The tool does not store a Steam password or Steam Guard code, and it leaves `steam_appid.txt` out of the depot.
-
-## Installation
-
-1. Download or clone the repository into your Unity project's `Packages` folder.
-
-Alternatively, in the Unity Editor Package Manager:
-
-1. Hit `(+)` and select `Add package from Git URL`
-2. Paste the git URL for this package: https://github.com/PieroTechnical/com.pierotechnical.buildandpublishtool.git and hit `Add`
-
-After installation, navigate to `Tools > Build Automation and Publish Tool` to open the tool window.
-
-Use **Locate Butler** to choose the Butler executable. On Windows that file is `butler.exe`. On macOS and Linux it has no extension.
-
-Use **Locate steamcmd** to choose the steamcmd executable before a Steam upload.
-
-## Usage
-
-- **Butler:** Set the Butler executable before uploading to itch.io. The path is stored for this machine. Log in once with `butler login` before the first upload. If Butler is missing or not logged in, you can still build locally or upload to Steam.
-- **Steam:** Set the steamcmd executable, Steam username, and App ID. Leaving the App ID field loads that app’s depots and branches into dropdowns beside each depot field and the branch field. A typed value is what the upload uses, including an ID or branch that is not in the list. An empty depot field is filled only when the app has exactly one depot for that OS. Log in once with **Login with steamcmd** and finish the password and Steam Guard prompt in that window. The upload check uses that saved login and does not type a password. A blank branch uploads the build without setting it live. `public` and `default` stay in the branch list, and `default` must be set live on the Steamworks builds page. Another branch is set live only when every desktop platform selected for Steam built successfully. Removing `Builds/.steam-cache` is safe and makes the next upload complete.
-- **Version:** Use `major.minor.patch` only. Increment buttons and leaving the version field save `Assets/version.txt` and Player Settings `bundleVersion`.
-- **Itch target:** Itch username and game title are the itch.io user and game slug (`lowercase`, spaces become hyphens), for example `my-studio/cool-game`. The game title also names the local build folder. The tool remembers them on this machine. Unity product name and company name stay in Player Settings.
-- **Publish:** Turn on itch.io, Steam, or both. **Build** does not upload. **Build and Upload** uploads to each destination that is on.
-- **Platforms:** Turn on the platforms to include in a batch, or use a platform's own Build / Build and Upload button. WebGL can upload to itch.io and is left out of the Steam app build.
-- **Output:** Successful builds are written to `Builds/<game>/<version>/<platform>/`. A log for the latest run is written to `Builds/last-build.log`.
-
-## Tests
-
-Edit Mode tests cover version parsing, output paths, upload exclusions, Butler arguments, SteamPipe scripts, and the rule that a failed build is not uploaded. To run them, add this package to `testables` in the project `Packages/manifest.json`:
-
-```json
-"testables": [
-  "com.pierotechnical.buildandpublishtool"
-]
-```
+- Project-owned settings under `ProjectSettings`, separate from local executable
+  paths and the local Steam username.
+- Immutable preflight plans that snapshot scenes, version, Android bundle mode,
+  targets, output paths, and publisher jobs.
+- A persisted queue under `Library/BuildAndPublishTool` that resumes after
+  compilation, domain reload, or an Editor restart.
+- Sequential builds for every non-obsolete Unity `BuildTarget`; common desktop,
+  WebGL, Android, and iOS targets have explicit output strategies.
+- itch.io publishing through Butler and aggregate SteamPipe publishing through
+  steamcmd. Failed builds are never published.
+- Asynchronous external tools with bounded output, timeouts, cancellation,
+  credential-safe logs, and interrupted-upload reconciliation.
+- Per-run logs and JSON records under
+  `Builds/.build-and-publish/runs/<queue-id>/`.
+- Crash-safe artifact replacement. The prior successful artifact remains in a
+  `.previous` folder until explicitly cleaned.
 
 ## Requirements
 
-- Unity 2020.3 or higher
-- [Butler (itch.io command-line tool)](https://itchio.itch.io/butler), for itch.io uploads
-- [steamcmd](https://developer.valvesoftware.com/wiki/SteamCMD), for Steam uploads
+- Unity 2020.3 or newer
+- [Butler](https://itchio.itch.io/butler) for itch.io publishing
+- [steamcmd](https://developer.valvesoftware.com/wiki/SteamCMD) for Steam
+  publishing
 
-## Contribution
+The package never asks for, stores, or passes a Steam password, Steam Guard
+code, itch API key, or access token. Complete interactive login in the tool's
+own terminal window.
 
-Contributions are welcome! If you have suggestions for improvements or find any issues, please create a new issue or submit a pull request.
+## Install
+
+Pin a release tag in Package Manager:
+
+```text
+https://github.com/PieroTechnical/com.pierotechnical.buildandpublishtool.git#v2.0.0
+```
+
+Open the window from **Tools > Build and Publish**.
+
+## First setup
+
+1. Review the project profile migration notice. Import legacy settings only
+   after confirming they belong to this project.
+2. Set the local game title and version.
+3. Add targets, choose **Include in batch**, and configure each stable output
+   key under **Advanced**.
+4. Configure itch.io and Steam even before enabling them on a target.
+5. Locate Butler or steamcmd, complete interactive login, then use the explicit
+   **Verify / Refresh** action.
+6. Review inline preflight results and start a build.
+
+Project-owned values are versioned with the project:
+
+- game/artifact name
+- itch owner and project slug
+- Steam App ID and branch
+- target list, output keys, channels, depots, and publish choices
+
+Machine-local values are not written to project settings:
+
+- Butler path
+- steamcmd path
+- Steam username
+
+## Output and recovery
+
+Successful artifacts are written to:
+
+```text
+Builds/<game>/<version>/<output-key>/
+```
+
+The active queue journal is stored at:
+
+```text
+Library/BuildAndPublishTool/queue.json
+```
+
+An Editor reload during a build records that build as interrupted. An Editor
+reload during a non-idempotent upload records an interrupted publisher result
+and requires checking the backend; it never silently retries the upload.
+
+Use **Tools > Build and Publish > Cleanup** to explicitly remove failed work,
+Steam chunk caches, run history, or `.previous` artifacts. Nothing is removed
+automatically.
+
+## Steam behavior
+
+- Windows, macOS, and Linux artifacts can be mapped to depots.
+- A single aggregate app build contains only successful mapped artifacts.
+- A configured branch is set live only when every mapped Steam target built
+  successfully.
+- Blank branches upload without setting live.
+- The `default` branch must be set live in Steamworks.
+- Exit code 0 is insufficient: the upload must also report positive SteamPipe
+  build completion evidence.
+
+## Supported Editor API
+
+The supported API is intentionally small:
+
+- `BuildAndPublish.TryCreatePlan`
+- `BuildAndPublish.TrySubmit`
+- `BuildAndPublish.CurrentRun`
+- `BuildAndPublish.HasActiveRun`
+- `BuildAndPublish.Cancel`
+- `BuildAndPublish.RunChanged`
+
+All other package types are implementation details. See
+[`Documentation~/api.md`](Documentation~/api.md).
+
+## Tests
+
+Add the package to `testables` in the host project's `Packages/manifest.json`:
+
+```json
+{
+  "testables": [
+    "com.pierotechnical.buildandpublishtool"
+  ]
+}
+```
+
+Run Edit Mode tests. Tests use fake/local process fixtures only and never contact
+itch.io or Steam.
+
+More detail is available in [`Documentation~`](Documentation~/index.md), and
+release changes are listed in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Contact
-
-For any questions or feedback, please contact [daniel@pierotechnical.com](mailto:daniel@pierotechnical.com).
+[MIT](LICENSE)

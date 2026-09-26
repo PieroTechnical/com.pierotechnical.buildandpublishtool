@@ -1,9 +1,19 @@
 {
   "name": "com.pierotechnical.buildandpublishtool",
-  "version": "1.0.0",
-  "displayName": "Build Automation and Publish Tool",
-  "description": "Builds Windows, Mac, Linux, and WebGL players into versioned folders and can upload them to itch.io with Butler or to Steam with steamcmd.",
+  "version": "2.0.0",
+  "displayName": "Build and Publish",
+  "description": "Creates recoverable, versioned Unity builds and publishes successful artifacts to itch.io and Steam.",
   "unity": "2020.3",
+  "documentationUrl": "https://github.com/PieroTechnical/com.pierotechnical.buildandpublishtool/tree/v2.0.0/Documentation~",
+  "changelogUrl": "https://github.com/PieroTechnical/com.pierotechnical.buildandpublishtool/blob/v2.0.0/CHANGELOG.md",
+  "licensesUrl": "https://github.com/PieroTechnical/com.pierotechnical.buildandpublishtool/blob/v2.0.0/LICENSE",
+  "keywords": [
+    "build",
+    "publishing",
+    "itch.io",
+    "steam",
+    "editor"
+  ],
   "author": {
     "name": "Daniel Piero Montemiglio",
     "email": "daniel@pierotechnical.com",

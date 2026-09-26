@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Pierotechnical.BuildAndUploadTool.Editor
 {
-    public sealed class SteamDepotUpload
+    internal sealed class SteamDepotUpload
     {
         public string PlatformId;
         public string Label;
@@ -14,7 +14,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         public string ScriptName;
     }
 
-    public static class SteamCommand
+    internal static class SteamCommand
     {
         public const string LoginRequiredMessage = "steamcmd is not logged in. Use Login with steamcmd, then try again.";
         public const string MissingCacheMessage = "steamcmd has no saved login for this username. Use Login with steamcmd, finish the password and Steam Guard prompt, then try again.";
@@ -207,55 +207,95 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             return false;
         }
 
-        public static bool EverySteamTargetSucceeded(IList<BuildRequest> pending, IList<TargetResult> completed)
+        internal static bool HasUploadSuccess(string output, out string buildId)
         {
-            if (pending == null)
-                return true;
-
-            for (int i = 0; i < pending.Count; i++)
+            buildId = null;
+            if (string.IsNullOrWhiteSpace(output)
+                || !TryParseBuildId(output, out buildId))
             {
-                BuildRequest request = pending[i];
-                if (request == null || !request.PublishSteam)
-                    continue;
-                if (!PlatformCatalog.SupportsSteamPlatform(request.PlatformId))
-                    continue;
-                if (completed == null || i >= completed.Count || completed[i] == null || !completed[i].BuildSucceeded)
+                return false;
+            }
+
+            return output.IndexOf(
+                       "successfully finished appid",
+                       StringComparison.OrdinalIgnoreCase) >= 0
+                || output.IndexOf(
+                       "app build complete",
+                       StringComparison.OrdinalIgnoreCase) >= 0
+                || output.IndexOf(
+                       "build successfully uploaded",
+                       StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        internal static bool EverySteamTargetSucceeded(
+            SteamPublishPayload payload,
+            IList<TargetResult> completed)
+        {
+            if (payload == null || payload.Targets == null || payload.Targets.Count == 0)
+                return false;
+
+            for (int i = 0; i < payload.Targets.Count; i++)
+            {
+                SteamTargetPayload target = payload.Targets[i];
+                if (target == null
+                    || target.TargetIndex < 0
+                    || completed == null
+                    || target.TargetIndex >= completed.Count
+                    || completed[target.TargetIndex] == null
+                    || !completed[target.TargetIndex].BuildSucceeded)
+                {
                     return false;
+                }
             }
 
             return true;
         }
 
-        public static bool HasPublishableBuild(IList<BuildRequest> pending, IList<TargetResult> completed)
-        {
-            return SelectDepots(pending, completed).Count > 0;
-        }
-
-        public static List<SteamDepotUpload> SelectDepots(IList<BuildRequest> pending, IList<TargetResult> completed)
+        internal static List<SteamDepotUpload> SelectDepots(
+            SteamPublishPayload payload,
+            BuildPlan plan,
+            IList<TargetResult> completed)
         {
             var depots = new List<SteamDepotUpload>();
-            if (pending == null)
-                return depots;
-
-            for (int i = 0; i < pending.Count; i++)
+            if (payload == null
+                || payload.Targets == null
+                || plan == null
+                || plan.Targets == null
+                || completed == null)
             {
-                BuildRequest request = pending[i];
-                if (request == null || !request.PublishSteam)
-                    continue;
-                if (!ButlerCommand.ShouldUpload(true, completed != null && i < completed.Count && completed[i] != null && completed[i].BuildSucceeded))
-                    continue;
-                if (!PlatformCatalog.SupportsSteamPlatform(request.PlatformId))
-                    continue;
+                return depots;
+            }
 
+            for (int i = 0; i < payload.Targets.Count; i++)
+            {
+                SteamTargetPayload mapping = payload.Targets[i];
+                if (mapping == null
+                    || mapping.TargetIndex < 0
+                    || mapping.TargetIndex >= plan.Targets.Count
+                    || mapping.TargetIndex >= completed.Count)
+                {
+                    continue;
+                }
+
+                BuildTargetPlan target = plan.Targets[mapping.TargetIndex];
+                TargetResult result = completed[mapping.TargetIndex];
                 string depotId;
-                SteamCommand.TryParseSteamId(request.SteamDepotId, out depotId);
+                if (target == null
+                    || result == null
+                    || !result.BuildSucceeded
+                    || string.IsNullOrEmpty(result.ArtifactPath)
+                    || !TryParseSteamId(mapping.DepotId, out depotId))
+                {
+                    continue;
+                }
+
                 depots.Add(new SteamDepotUpload
                 {
-                    PlatformId = request.PlatformId,
-                    Label = string.IsNullOrEmpty(request.Label) ? request.PlatformId : request.Label,
+                    PlatformId = target.OutputKey,
+                    Label = string.IsNullOrEmpty(target.Label) ? target.OutputKey : target.Label,
                     DepotId = depotId,
-                    ContentRoot = BuildPaths.VersionedFolder(request.OutputRoot, request.ItchGame, request.Version, request.PlatformId),
-                    ScriptName = DepotScriptName(request.PlatformId)
+                    ContentRoot = result.ArtifactPath,
+                    ScriptName = DepotScriptName(target.OutputKey)
                 });
             }
 
@@ -264,7 +304,8 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         public static string DepotScriptName(string platformId)
         {
-            string safe = string.IsNullOrEmpty(platformId) ? "depot" : platformId;
+            string safe = BuildPaths.ToPortableKey(
+                string.IsNullOrEmpty(platformId) ? "depot" : platformId);
             return "depot_" + safe + ".vdf";
         }
 
@@ -389,7 +430,23 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             if (string.IsNullOrEmpty(value))
                 return string.Empty;
 
-            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var builder = new StringBuilder(value.Length);
+            for (int i = 0; i < value.Length; i++)
+            {
+                char character = value[i];
+                if (char.IsControl(character))
+                {
+                    builder.Append(' ');
+                }
+                else
+                {
+                    if (character == '\\' || character == '"')
+                        builder.Append('\\');
+                    builder.Append(character);
+                }
+            }
+
+            return builder.ToString();
         }
 
         public static SteamDepotLookup ParseAppDepots(string appInfo)
@@ -699,14 +756,14 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         }
     }
 
-    public sealed class SteamCatalogDepot
+    internal sealed class SteamCatalogDepot
     {
         public string Id;
         public string PlatformId;
         public string MenuLabel;
     }
 
-    public sealed class SteamDepotLookup
+    internal sealed class SteamDepotLookup
     {
         public bool FoundDepots;
         public string Message;

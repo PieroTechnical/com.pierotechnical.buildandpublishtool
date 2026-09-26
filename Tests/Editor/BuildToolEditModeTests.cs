@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
+using UnityEditor;
 
 namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
 {
@@ -103,6 +104,165 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
             Assert.AreEqual(Path.Combine("Out", "MacBuild.app"), BuildPaths.PlayerLocation("Out", "mac", "MyGame"));
             Assert.AreEqual(Path.Combine("Out", "LinuxBuild.x86_64"), BuildPaths.PlayerLocation("Out", "linux", "Cool"));
             Assert.AreEqual(Path.Combine("Out", "WebGLBuild"), BuildPaths.PlayerLocation("Out", "webgl", "Cool"));
+            Assert.AreEqual(Path.Combine("Out", "MyGame.exe"), BuildPaths.PlayerLocation("Out", BuildTarget.StandaloneWindows64, "MyGame"));
+            Assert.AreEqual(Path.Combine("Out", "MacBuild.app"), BuildPaths.PlayerLocation("Out", BuildTarget.StandaloneOSX, "MyGame"));
+            Assert.AreEqual(Path.Combine("Out", "LinuxBuild.x86_64"), BuildPaths.PlayerLocation("Out", BuildTarget.StandaloneLinux64, "Cool"));
+            Assert.AreEqual(Path.Combine("Out", "WebGLBuild"), BuildPaths.PlayerLocation("Out", BuildTarget.WebGL, "Cool"));
+            Assert.AreEqual(Path.Combine("Out", "MyGame.apk"), BuildPaths.PlayerLocation("Out", BuildTarget.Android, "MyGame"));
+            Assert.AreEqual(Path.Combine("Out", "MyGame"), BuildPaths.PlayerLocation("Out", BuildTarget.iOS, "MyGame"));
+        }
+
+        [Test]
+        public void AndroidAppBundleUsesAnAabPath()
+        {
+            Assert.AreEqual(Path.Combine("Out", "MyGame.apk"), BuildPaths.PlayerLocation("Out", BuildTarget.Android, "MyGame", false));
+            Assert.AreEqual(Path.Combine("Out", "MyGame.aab"), BuildPaths.PlayerLocation("Out", BuildTarget.Android, "MyGame", true));
+            Assert.AreEqual(Path.Combine("Out", "MyGame.exe"), BuildPaths.PlayerLocation("Out", BuildTarget.StandaloneWindows64, "MyGame", true));
+        }
+
+        [Test]
+        public void SecondWindowsTargetDoesNotReuseTheWindowsFolder()
+        {
+            var existing = new List<BuildTargetEntry>();
+            existing.Add(BuildTargetSet.Seed("windows", "Windows", BuildTarget.StandaloneWindows64, "windows", true, "1001", false, true));
+            BuildTargetEntry second = BuildTargetSet.Create(BuildTarget.StandaloneWindows64, existing);
+            Assert.IsFalse(string.Equals(second.FolderKey, "windows", StringComparison.OrdinalIgnoreCase));
+            Assert.AreEqual((int)BuildTarget.StandaloneWindows64, second.TargetValue);
+            Assert.AreNotEqual("windows", second.FolderKey);
+            Assert.IsFalse(existing[0].PublishItch);
+            Assert.IsTrue(existing[0].PublishSteam);
+            Assert.IsTrue(second.PublishItch);
+            Assert.IsFalse(second.PublishSteam);
+            BuildTargetEntry web = BuildTargetSet.Seed("webgl", "WebGL", BuildTarget.WebGL, "webgl", true, "1004", true, true);
+            Assert.IsTrue(web.PublishItch);
+            Assert.IsFalse(web.PublishSteam);
+
+            BuildTarget[] addable = BuildTargetSet.ListAddableTargets();
+            Assert.IsFalse(Array.IndexOf(addable, BuildTarget.NoTarget) >= 0);
+            Assert.IsTrue(Array.IndexOf(addable, BuildTarget.Android) >= 0);
+            Assert.IsTrue(Array.IndexOf(addable, BuildTarget.StandaloneWindows64) >= 0);
+        }
+
+        [Test]
+        public void ProjectTargetNormalizationRepairsIdentityAndOutputCollisions()
+        {
+            var targets = new List<BuildTargetEntry>
+            {
+                BuildTargetSet.Seed("windows", "Windows", BuildTarget.StandaloneWindows64, "windows", true, "1001", true, true),
+                BuildTargetSet.Seed("windows", "Web", BuildTarget.WebGL, "html", true, "1002", true, true)
+            };
+            targets[1].Id = targets[0].Id;
+
+            BuildToolProjectSettings.NormalizeTargets(targets);
+
+            Assert.AreNotEqual(targets[0].Id, targets[1].Id);
+            Assert.AreEqual("windows", targets[0].FolderKey);
+            Assert.AreEqual("windows-2", targets[1].FolderKey);
+            Assert.IsFalse(targets[1].PublishSteam);
+        }
+
+        [Test]
+        public void ChangingBuildTargetResetsPlatformBindingsButKeepsOutputIdentity()
+        {
+            BuildTargetEntry entry = BuildTargetSet.Seed(
+                "windows",
+                "Windows",
+                BuildTarget.StandaloneWindows64,
+                "windows",
+                true,
+                "1001",
+                true,
+                true);
+
+            Assert.IsTrue(BuildTargetSet.ChangeTarget(entry, BuildTarget.StandaloneOSX));
+            Assert.AreEqual("windows", entry.FolderKey);
+            Assert.AreEqual("Mac", entry.Name);
+            Assert.AreEqual("mac", entry.Channel);
+            Assert.AreEqual(string.Empty, entry.SteamDepotId);
+            Assert.IsTrue(entry.PublishSteam);
+
+            Assert.IsTrue(BuildTargetSet.ChangeTarget(entry, BuildTarget.WebGL));
+            Assert.IsFalse(entry.PublishSteam);
+        }
+
+        [Test]
+        public void BuildPlanSnapshotsScenesAndReportsAllPreflightProblems()
+        {
+            var targets = new List<BuildTargetEntry>
+            {
+                BuildTargetSet.Seed("same", "Windows", BuildTarget.StandaloneWindows64, "bad:channel", true, "100", true, true),
+                BuildTargetSet.Seed("same", "Mac", BuildTarget.StandaloneOSX, "mac", true, "100", false, true)
+            };
+            var configuration = new BuildConfiguration
+            {
+                Targets = targets,
+                SelectedIndices = new List<int> { 0, 1 },
+                Upload = true,
+                Version = "invalid",
+                GameName = "Game/Unsafe",
+                ItchOwner = "owner@invalid",
+                ItchProject = "project",
+                ButlerPath = "missing-butler",
+                SteamUser = string.Empty,
+                SteamAppId = "0",
+                SteamCmdPath = "missing-steamcmd"
+            };
+            var environment = new BuildEnvironmentSnapshot
+            {
+                ProjectRoot = "Project",
+                Scenes = new[] { "Assets/One.unity" },
+                ActiveBuildTargetValue = (int)BuildTarget.StandaloneWindows64
+            };
+
+            BuildPlanResult result = BuildPlanFactory.Create(configuration, environment);
+            Assert.IsTrue(result.HasErrors);
+            Assert.IsNull(result.Plan);
+            Assert.GreaterOrEqual(result.Issues.Count, 8);
+
+            string executable = Path.GetTempFileName();
+            try
+            {
+                targets[0].FolderKey = "windows";
+                targets.RemoveAt(1);
+                targets[0].Channel = "windows";
+                targets[0].PublishSteam = false;
+                configuration.SelectedIndices = new List<int> { 0 };
+                configuration.Version = "1.2.3";
+                configuration.GameName = "Game";
+                configuration.ItchOwner = "owner";
+                configuration.ButlerPath = executable;
+                BuildPlanResult valid = BuildPlanFactory.Create(configuration, environment);
+                Assert.IsFalse(valid.HasErrors);
+                Assert.IsNotNull(valid.Plan);
+                environment.Scenes[0] = "Assets/Changed.unity";
+                Assert.AreEqual("Assets/One.unity", valid.Plan.Scenes[0]);
+                Assert.AreEqual("Game", valid.Plan.GameName);
+                Assert.AreEqual(1, valid.Plan.PublishJobs.Count);
+            }
+            finally
+            {
+                File.Delete(executable);
+            }
+        }
+
+        [Test]
+        public void BuildTargetsReorderAroundTheDraggedRow()
+        {
+            var items = new List<string> { "a", "b", "c", "d" };
+            BuildTargetSet.Move(items, 0, 4);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d", "a" }, items);
+
+            items = new List<string> { "a", "b", "c", "d" };
+            BuildTargetSet.Move(items, 3, 0);
+            CollectionAssert.AreEqual(new[] { "d", "a", "b", "c" }, items);
+
+            items = new List<string> { "a", "b", "c", "d" };
+            BuildTargetSet.Move(items, 1, 3);
+            CollectionAssert.AreEqual(new[] { "a", "c", "b", "d" }, items);
+
+            items = new List<string> { "a", "b", "c", "d" };
+            BuildTargetSet.Move(items, 1, 2);
+            CollectionAssert.AreEqual(new[] { "a", "b", "c", "d" }, items);
         }
 
         [Test]
@@ -124,6 +284,79 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
         }
 
         [Test]
+        public void ManagedPathsRejectSiblingPrefixEscapes()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "pierobuild-root");
+            string full;
+            string error;
+            Assert.IsTrue(SafeFileSystem.TryGetContainedPath(
+                root,
+                Path.Combine(root, "child", "file.txt"),
+                out full,
+                out error));
+            Assert.IsNull(error);
+            Assert.IsFalse(SafeFileSystem.TryGetContainedPath(
+                root,
+                root + "-other" + Path.DirectorySeparatorChar + "file.txt",
+                out full,
+                out error));
+            StringAssert.Contains("escaped", error);
+        }
+
+        [Test]
+        public void ArtifactPromotionKeepsAndRecoversThePreviousBuild()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "pierobuild-promotion-" + Guid.NewGuid().ToString("N"));
+            string temporary = Path.Combine(root, ".in-progress", "queue", "game");
+            string final = Path.Combine(root, "Game", "1.0.0", "windows");
+            Directory.CreateDirectory(temporary);
+            Directory.CreateDirectory(final);
+            File.WriteAllText(Path.Combine(temporary, "new.txt"), "new");
+            File.WriteAllText(Path.Combine(final, "old.txt"), "old");
+            try
+            {
+                string error;
+                Assert.IsTrue(SafeFileSystem.TryPromote(
+                    root,
+                    temporary,
+                    final,
+                    "queue",
+                    out error), error);
+                Assert.IsTrue(File.Exists(Path.Combine(final, "new.txt")));
+                Assert.IsTrue(File.Exists(Path.Combine(final + ".previous", "old.txt")));
+
+                string replacement = final + ".replacing-queue";
+                Directory.Move(final, replacement);
+                Assert.IsTrue(SafeFileSystem.TryRecoverPromotion(
+                    root,
+                    final,
+                    replacement,
+                    final + ".previous",
+                    final + ".promotion",
+                    out error), error);
+                Assert.IsTrue(File.Exists(Path.Combine(final, "new.txt")));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void ProcessOutputRedactsCredentialLikeValues()
+        {
+            string output = ProcessOutput.Redact(
+                "password=hunter2 access_token: abc123 Steam Guard code: 456789 ordinary=value");
+            StringAssert.DoesNotContain("hunter2", output);
+            StringAssert.DoesNotContain("abc123", output);
+            StringAssert.DoesNotContain("456789", output);
+            StringAssert.Contains("ordinary=value", output);
+        }
+
+        [Test]
         public void ExcludesDoNotShipFoldersBySuffix()
         {
             Assert.IsTrue(PublishExclusions.IsExcluded("Game_BackUpThisFolder_ButDontShipItWithYourGame/foo.dll"));
@@ -141,6 +374,9 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
             Assert.AreEqual("my-studio", BuildPaths.ToItchSlug(" My Studio "));
             Assert.AreEqual("https://my-studio.itch.io/cool-game", BuildPaths.ItchPageUrl("My Studio", "Cool Game"));
             Assert.AreEqual(string.Empty, BuildPaths.ItchPageUrl("", "Cool Game"));
+            Assert.AreEqual(string.Empty, BuildPaths.ItchPageUrl("studio@evil.example", "Cool Game"));
+            Assert.IsFalse(ButlerCommand.IsValidChannel("windows:beta"));
+            Assert.IsTrue(ButlerCommand.IsValidChannel("windows-beta"));
         }
 
         [Test]
@@ -153,9 +389,12 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
                 "windows",
                 "1.2.3");
 
-            Assert.AreEqual(
+            StringAssert.StartsWith(
                 "push \"Builds/My Game\" \"my-studio/cool-game:windows\" --userversion \"1.2.3\"",
                 args);
+            StringAssert.Contains("--ignore \"*_DoNotShip*\"", args);
+            StringAssert.Contains("--ignore \"*BackUpThisFolder_ButDontShipItWithYourGame*\"", args);
+            StringAssert.Contains("--ignore \"*BurstDebugInformation_DoNotShip*\"", args);
         }
 
         [Test]
@@ -163,12 +402,88 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
         {
             Assert.AreEqual("\"say \\\"hi\\\"\"", ButlerCommand.Quote("say \"hi\""));
             Assert.AreEqual("\"C:\\\\\"", ButlerCommand.Quote("C:\\"));
+            Assert.AreEqual("\"a\\\\\\\"b\"", ButlerCommand.Quote("a\\\"b"));
+            Assert.AreEqual("\"C:\\\\\\\\\"", ButlerCommand.Quote("C:\\\\"));
         }
 
         [Test]
         public void StatusArgumentsIncludeTheItchTarget()
         {
             Assert.AreEqual("status \"my-studio/cool-game\"", ButlerCommand.StatusArguments("My Studio", "Cool Game"));
+            Assert.AreEqual("status \"my-studio/cool-game\" --json", ButlerCommand.StatusJsonArguments("My Studio", "Cool Game"));
+            Assert.AreEqual("login", ButlerCommand.LoginArguments());
+        }
+
+        [Test]
+        public void ItchChannelMenuKeepsATypedChannel()
+        {
+            string output = "{\"type\":\"log\",\"message\":\"listing channels\"}\n"
+                + "{\"type\":\"result\",\"value\":{\"target\":\"my-studio/cool-game\",\"channels\":["
+                + "{\"name\":\"windows\",\"head\":{\"userVersion\":\"0.1.0\",\"state\":\"completed\"}},"
+                + "{\"name\":\"html\"}]}}";
+            List<string> channels = ButlerCommand.ParseStatusChannels(output);
+            Assert.AreEqual(2, channels.Count);
+            Assert.AreEqual("windows", channels[0]);
+            Assert.AreEqual("html", channels[1]);
+            Assert.AreEqual("custom", ButlerCommand.ChooseChannel(" custom ", channels));
+            Assert.AreEqual(string.Empty, ButlerCommand.ChooseChannel("  ", channels));
+
+            var only = new List<string>();
+            only.Add("windows");
+            Assert.AreEqual("windows", ButlerCommand.ChooseChannel(string.Empty, only));
+            Assert.AreEqual("html", ButlerCommand.ChooseChannel("html", only));
+            Assert.AreEqual(0, ButlerCommand.ParseStatusChannels("{\"type\":\"log\",\"message\":\"name is windows\"}").Count);
+        }
+
+        [Test]
+        public void LookupIdentityChangesWithEveryExternalInput()
+        {
+            string itch = CatalogLookupKey.Itch("C:/tools/butler.exe", "studio", "game");
+            Assert.AreNotEqual(itch, CatalogLookupKey.Itch("D:/tools/butler.exe", "studio", "game"));
+            Assert.AreNotEqual(itch, CatalogLookupKey.Itch("C:/tools/butler.exe", "other", "game"));
+            Assert.AreNotEqual(itch, CatalogLookupKey.Itch("C:/tools/butler.exe", "studio", "other"));
+
+            string steam = CatalogLookupKey.Steam("C:/tools/steamcmd.exe", "account", "1000");
+            Assert.AreNotEqual(steam, CatalogLookupKey.Steam("D:/tools/steamcmd.exe", "account", "1000"));
+            Assert.AreNotEqual(steam, CatalogLookupKey.Steam("C:/tools/steamcmd.exe", "other", "1000"));
+            Assert.AreNotEqual(steam, CatalogLookupKey.Steam("C:/tools/steamcmd.exe", "account", "2000"));
+            Assert.AreEqual(
+                steam,
+                CatalogLookupKey.Steam("C:/tools/steamcmd.exe", "ACCOUNT", "01000"));
+        }
+
+        [Test]
+        public void QueueTerminalPhasesAreExplicit()
+        {
+            Assert.IsFalse(BuildQueueController.IsTerminal(BuildQueuePhase.Preparing));
+            Assert.IsFalse(BuildQueueController.IsTerminal(BuildQueuePhase.Finalizing));
+            Assert.IsTrue(BuildQueueController.IsTerminal(BuildQueuePhase.Completed));
+            Assert.IsTrue(BuildQueueController.IsTerminal(BuildQueuePhase.Cancelled));
+            Assert.IsTrue(BuildQueueController.IsTerminal(BuildQueuePhase.Failed));
+        }
+
+        [Test]
+        public void QueueRejectsCallbacksFromAnOldOperationOrRun()
+        {
+            var state = new BuildQueueState
+            {
+                Id = "current-queue",
+                ActiveOperationId = "current-operation"
+            };
+
+            Assert.IsTrue(BuildQueueController.MatchesOperation(
+                state,
+                "current-queue",
+                "current-operation"));
+            Assert.IsFalse(BuildQueueController.MatchesOperation(
+                state,
+                "old-queue",
+                "current-operation"));
+            Assert.IsFalse(BuildQueueController.MatchesOperation(
+                state,
+                "current-queue",
+                "old-operation"));
+            Assert.IsFalse(BuildQueueController.MatchesOperation(null, "current-queue", "current-operation"));
         }
 
         [Test]
@@ -234,18 +549,32 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
         [Test]
         public void SteamDepotsOmitWebGl()
         {
-            var pending = new List<BuildRequest>
+            var plan = new BuildPlan
             {
-                SteamRequest("windows", "Windows", "1001"),
-                SteamRequest("webgl", "WebGL", "1004")
+                Targets = new List<BuildTargetPlan>
+                {
+                    SteamTarget("windows", "Windows", BuildTarget.StandaloneWindows64),
+                    SteamTarget("webgl", "WebGL", BuildTarget.WebGL)
+                }
+            };
+            var payload = new SteamPublishPayload
+            {
+                Targets = new List<SteamTargetPayload>
+                {
+                    new SteamTargetPayload { TargetIndex = 0, DepotId = "1001" }
+                }
             };
             var completed = new List<TargetResult>
             {
-                new TargetResult { BuildSucceeded = true },
+                new TargetResult
+                {
+                    BuildSucceeded = true,
+                    ArtifactPath = BuildPaths.VersionedFolder("Builds", "Game", "0.1.0", "windows")
+                },
                 new TargetResult { BuildSucceeded = false }
             };
 
-            List<SteamDepotUpload> depots = SteamCommand.SelectDepots(pending, completed);
+            List<SteamDepotUpload> depots = SteamCommand.SelectDepots(payload, plan, completed);
             Assert.AreEqual(1, depots.Count);
             Assert.AreEqual("windows", depots[0].PlatformId);
             Assert.AreEqual("1001", depots[0].DepotId);
@@ -253,28 +582,77 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
             Assert.AreEqual(BuildPaths.VersionedFolder("Builds", "Game", "0.1.0", "windows"), depots[0].ContentRoot);
             Assert.IsFalse(PlatformCatalog.SupportsSteamPlatform("webgl"));
             Assert.IsTrue(PlatformCatalog.SupportsSteamPlatform("linux"));
-            Assert.IsTrue(SteamCommand.EverySteamTargetSucceeded(pending, completed));
+            Assert.IsTrue(SteamCommand.EverySteamTargetSucceeded(payload, completed));
             Assert.AreEqual("beta", SteamCommand.ResolveSetLive(" beta ", true));
+        }
+
+        [Test]
+        public void DuplicateSteamDepotsAreRejectedBeforeTheQueueStarts()
+        {
+            string steamcmd = Path.GetTempFileName();
+            try
+            {
+                var targets = new List<BuildTargetEntry>();
+                targets.Add(BuildTargetSet.Seed("windows", "Windows", BuildTarget.StandaloneWindows64, "windows", true, "100", false, true));
+                targets.Add(BuildTargetSet.Seed("mac", "Mac", BuildTarget.StandaloneOSX, "mac", true, "100", false, true));
+                BuildPlanResult result = BuildPlanFactory.Create(
+                    new BuildConfiguration
+                    {
+                        Targets = targets,
+                        SelectedIndices = new List<int> { 0, 1 },
+                        Upload = true,
+                        Version = "1.0.0",
+                        GameName = "Game",
+                        SteamUser = "steamuser",
+                        SteamAppId = "10",
+                        SteamCmdPath = steamcmd
+                    },
+                    new BuildEnvironmentSnapshot
+                    {
+                        ProjectRoot = "Project",
+                        Scenes = new[] { "Assets/Scene.unity" },
+                        ActiveBuildTargetValue = (int)BuildTarget.StandaloneWindows64
+                    });
+
+                Assert.IsTrue(result.HasErrors);
+                Assert.IsNull(result.Plan);
+                Assert.IsTrue(HasIssue(result.Issues, "Depot 100 is used by more than one platform."));
+            }
+            finally
+            {
+                File.Delete(steamcmd);
+            }
         }
 
         [Test]
         public void SteamSetLiveIsWithheldWhenASteamPlatformFailed()
         {
-            var pending = new List<BuildRequest>
+            var plan = new BuildPlan
             {
-                SteamRequest("windows", "Windows", "1001"),
-                SteamRequest("mac", "Mac", "1002")
+                Targets = new List<BuildTargetPlan>
+                {
+                    SteamTarget("windows", "Windows", BuildTarget.StandaloneWindows64),
+                    SteamTarget("mac", "Mac", BuildTarget.StandaloneOSX)
+                }
+            };
+            var payload = new SteamPublishPayload
+            {
+                Targets = new List<SteamTargetPayload>
+                {
+                    new SteamTargetPayload { TargetIndex = 0, DepotId = "1001" },
+                    new SteamTargetPayload { TargetIndex = 1, DepotId = "1002" }
+                }
             };
             var completed = new List<TargetResult>
             {
-                new TargetResult { BuildSucceeded = true },
+                new TargetResult { BuildSucceeded = true, ArtifactPath = "Builds/windows" },
                 new TargetResult { BuildSucceeded = false }
             };
 
-            List<SteamDepotUpload> depots = SteamCommand.SelectDepots(pending, completed);
+            List<SteamDepotUpload> depots = SteamCommand.SelectDepots(payload, plan, completed);
             Assert.AreEqual(1, depots.Count);
             Assert.AreEqual("windows", depots[0].PlatformId);
-            Assert.IsFalse(SteamCommand.EverySteamTargetSucceeded(pending, completed));
+            Assert.IsFalse(SteamCommand.EverySteamTargetSucceeded(payload, completed));
             Assert.AreEqual(string.Empty, SteamCommand.ResolveSetLive("beta", false));
             Assert.AreEqual(string.Empty, SteamCommand.ResolveSetLive("  ", true));
         }
@@ -359,6 +737,12 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
                 out buildId));
             Assert.AreEqual("1234567", buildId);
             Assert.IsFalse(SteamCommand.TryParseBuildId("Successfully finished build preview.", out buildId));
+            Assert.IsTrue(SteamCommand.HasUploadSuccess(
+                "Successfully finished AppID 1000 build (BuildID 1234567).",
+                out buildId));
+            Assert.IsFalse(SteamCommand.HasUploadSuccess(
+                "Previous BuildID 1234567 was found before an error.",
+                out buildId));
         }
 
         [Test]
@@ -423,18 +807,31 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
             Assert.IsFalse(SteamCommand.AppInfoArguments("studio", "1000").Contains("password"));
         }
 
-        static BuildRequest SteamRequest(string platformId, string label, string depotId)
+        static BuildTargetPlan SteamTarget(
+            string platformId,
+            string label,
+            BuildTarget target)
         {
-            return new BuildRequest
+            return new BuildTargetPlan
             {
-                PublishSteam = true,
-                PlatformId = platformId,
+                Id = platformId,
+                OutputKey = platformId,
                 Label = label,
-                SteamDepotId = depotId,
-                ItchGame = "Game",
-                Version = "0.1.0",
-                OutputRoot = "Builds"
+                TargetValue = (int)target
             };
+        }
+
+        static bool HasIssue(IList<ValidationIssue> issues, string message)
+        {
+            if (issues == null)
+                return false;
+            for (int i = 0; i < issues.Count; i++)
+            {
+                if (issues[i] != null && issues[i].Message == message)
+                    return true;
+            }
+
+            return false;
         }
     }
 }

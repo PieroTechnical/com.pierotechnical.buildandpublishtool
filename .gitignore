@@ -1,1 +1,5 @@
 /.vs
+
+/Tools/**/bin/
+/Tools/**/obj/
+

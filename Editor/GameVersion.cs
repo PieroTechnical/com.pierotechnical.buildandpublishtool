@@ -2,7 +2,7 @@ using System;
 
 namespace Pierotechnical.BuildAndUploadTool.Editor
 {
-    public static class GameVersion
+    internal static class GameVersion
     {
         public static bool TryParse(string text, out int major, out int minor, out int patch)
         {

@@ -1,9 +1,10 @@
 using System;
 using System.IO;
+using UnityEditor;
 
 namespace Pierotechnical.BuildAndUploadTool.Editor
 {
-    public static class BuildPaths
+    internal static class BuildPaths
     {
         public const string TempFolderName = ".in-progress";
         public const string SteamCacheFolderName = ".steam-cache";
@@ -20,13 +21,21 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             if (string.IsNullOrWhiteSpace(name))
                 return "game";
 
-            char[] invalid = Path.GetInvalidFileNameChars();
             string trimmed = name.Trim();
             var buffer = new char[trimmed.Length];
             for (int i = 0; i < trimmed.Length; i++)
             {
                 char character = trimmed[i];
-                bool invalidChar = character < 32 || Array.IndexOf(invalid, character) >= 0;
+                bool invalidChar = character < 32
+                    || character == '<'
+                    || character == '>'
+                    || character == ':'
+                    || character == '"'
+                    || character == '/'
+                    || character == '\\'
+                    || character == '|'
+                    || character == '?'
+                    || character == '*';
                 buffer[i] = invalidChar ? '_' : character;
             }
 
@@ -41,6 +50,32 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             return sanitized;
         }
 
+        public static string ToPortableKey(string name)
+        {
+            string value = SanitizePathSegment(name).ToLowerInvariant();
+            var builder = new System.Text.StringBuilder(value.Length);
+            bool separator = false;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char character = value[i];
+                bool allowed = (character >= 'a' && character <= 'z')
+                    || (character >= '0' && character <= '9');
+                if (allowed)
+                {
+                    builder.Append(character);
+                    separator = false;
+                }
+                else if (!separator && builder.Length > 0)
+                {
+                    builder.Append('-');
+                    separator = true;
+                }
+            }
+
+            string key = builder.ToString().Trim('-');
+            return string.IsNullOrEmpty(key) ? "target" : key;
+        }
+
         public static string VersionedFolder(string buildsRoot, string gameName, string version, string platformId)
         {
             return Path.Combine(
@@ -52,9 +87,20 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         public static string TempFolder(string buildsRoot, string gameName, string version, string platformId)
         {
+            return TempFolder(buildsRoot, gameName, version, platformId, "legacy");
+        }
+
+        internal static string TempFolder(
+            string buildsRoot,
+            string gameName,
+            string version,
+            string platformId,
+            string queueId)
+        {
             return Path.Combine(
                 buildsRoot,
                 TempFolderName,
+                SanitizePathSegment(queueId),
                 SanitizePathSegment(gameName),
                 SanitizePathSegment(version),
                 SanitizePathSegment(platformId));
@@ -104,12 +150,71 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
         }
 
+        public static string PlayerLocation(string directory, BuildTarget target, string gameName)
+        {
+            return PlayerLocation(directory, target, gameName, false);
+        }
+
+        public static string PlayerLocation(string directory, BuildTarget target, string gameName, bool androidAppBundle)
+        {
+            BuildOutputKind outputKind = BuildTargetCatalog.Find(target).OutputKind;
+            if (outputKind == BuildOutputKind.WindowsExecutable)
+                return Path.Combine(directory, SanitizePathSegment(gameName) + ".exe");
+            if (outputKind == BuildOutputKind.MacApplication)
+                return Path.Combine(directory, "MacBuild.app");
+            if (outputKind == BuildOutputKind.LinuxExecutable)
+                return Path.Combine(directory, "LinuxBuild.x86_64");
+            if (outputKind == BuildOutputKind.WebDirectory)
+                return Path.Combine(directory, "WebGLBuild");
+            if (outputKind == BuildOutputKind.AndroidPackage)
+            {
+                string extension = androidAppBundle ? ".aab" : ".apk";
+                return Path.Combine(directory, SanitizePathSegment(gameName) + extension);
+            }
+
+            return Path.Combine(directory, SanitizePathSegment(gameName));
+        }
+
         public static string ToItchSlug(string input)
         {
-            if (string.IsNullOrEmpty(input))
-                return string.Empty;
+            string slug;
+            return TryNormalizeItchSlug(input, out slug) ? slug : string.Empty;
+        }
 
-            return input.Trim().ToLowerInvariant().Replace(" ", "-");
+        public static bool TryNormalizeItchSlug(string input, out string slug)
+        {
+            slug = string.Empty;
+            if (string.IsNullOrWhiteSpace(input))
+                return false;
+
+            string value = input.Trim().ToLowerInvariant();
+            var builder = new System.Text.StringBuilder(value.Length);
+            bool pendingHyphen = false;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char character = value[i];
+                bool letterOrDigit = (character >= 'a' && character <= 'z')
+                    || (character >= '0' && character <= '9');
+                if (letterOrDigit)
+                {
+                    if (pendingHyphen && builder.Length > 0)
+                        builder.Append('-');
+                    builder.Append(character);
+                    pendingHyphen = false;
+                    continue;
+                }
+
+                if (character == '-' || char.IsWhiteSpace(character))
+                {
+                    pendingHyphen = true;
+                    continue;
+                }
+
+                return false;
+            }
+
+            slug = builder.ToString();
+            return slug.Length > 0;
         }
 
         public static string ItchPageUrl(string user, string game)

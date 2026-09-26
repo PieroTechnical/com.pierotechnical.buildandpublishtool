@@ -1,0 +1,41 @@
+﻿name: Unity package validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Validate package metadata and versions
+        run: dotnet run --project Tools/PackageValidation/PackageValidation.csproj -- ..
+
+  unity-2020:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        with:
+          unityVersion: 2020.3.48f1
+          projectPath: TestProject~
+          testMode: editmode
+
+  unity-6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        with:
+          unityVersion: 6000.0.42f1
+          projectPath: TestProject~
+          testMode: editmode
+
