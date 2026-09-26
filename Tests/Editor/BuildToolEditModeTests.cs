@@ -349,10 +349,11 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
         public void ProcessOutputRedactsCredentialLikeValues()
         {
             string output = ProcessOutput.Redact(
-                "password=hunter2 access_token: abc123 Steam Guard code: 456789 ordinary=value");
+                "password=hunter2 access_token: abc123 Steam Guard code: 456789 Authorization: Bearer SECRET ordinary=value");
             StringAssert.DoesNotContain("hunter2", output);
             StringAssert.DoesNotContain("abc123", output);
             StringAssert.DoesNotContain("456789", output);
+            StringAssert.DoesNotContain("SECRET", output);
             StringAssert.Contains("ordinary=value", output);
         }
 
@@ -739,9 +740,20 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
             Assert.IsFalse(SteamCommand.TryParseBuildId("Successfully finished build preview.", out buildId));
             Assert.IsTrue(SteamCommand.HasUploadSuccess(
                 "Successfully finished AppID 1000 build (BuildID 1234567).",
+                "1000",
+                out buildId));
+            Assert.AreEqual("1234567", buildId);
+            Assert.IsFalse(SteamCommand.HasUploadSuccess(
+                "Successfully finished AppID 999 build (BuildID 1234567).",
+                "1000",
+                out buildId));
+            Assert.IsFalse(SteamCommand.HasUploadSuccess(
+                "Successfully finished AppID 1000 build (BuildID 1234567). ERROR! Failed to commit.",
+                "1000",
                 out buildId));
             Assert.IsFalse(SteamCommand.HasUploadSuccess(
                 "Previous BuildID 1234567 was found before an error.",
+                "1000",
                 out buildId));
         }
 

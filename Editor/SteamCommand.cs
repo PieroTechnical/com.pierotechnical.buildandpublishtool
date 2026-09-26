@@ -207,24 +207,46 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             return false;
         }
 
-        internal static bool HasUploadSuccess(string output, out string buildId)
+        internal static bool HasUploadSuccess(string output, string expectedAppId, out string buildId)
         {
             buildId = null;
-            if (string.IsNullOrWhiteSpace(output)
-                || !TryParseBuildId(output, out buildId))
-            {
+            string canonical;
+            if (string.IsNullOrWhiteSpace(output) || !TryParseSteamId(expectedAppId, out canonical))
                 return false;
+
+            string[] phrases =
+            {
+                "successfully finished appid",
+                "app build complete",
+                "build successfully uploaded"
+            };
+            int phraseAt = -1;
+            int phraseLength = 0;
+            for (int i = 0; i < phrases.Length; i++)
+            {
+                int search = 0;
+                while (search < output.Length)
+                {
+                    int found = IndexOfOrdinalIgnoreCase(output, phrases[i], search);
+                    if (found < 0)
+                        break;
+                    phraseAt = found;
+                    phraseLength = phrases[i].Length;
+                    search = found + phrases[i].Length;
+                }
             }
 
-            return output.IndexOf(
-                       "successfully finished appid",
-                       StringComparison.OrdinalIgnoreCase) >= 0
-                || output.IndexOf(
-                       "app build complete",
-                       StringComparison.OrdinalIgnoreCase) >= 0
-                || output.IndexOf(
-                       "build successfully uploaded",
-                       StringComparison.OrdinalIgnoreCase) >= 0;
+            if (phraseAt < 0)
+                return false;
+
+            int windowStart = Math.Max(0, phraseAt - 80);
+            int windowEnd = Math.Min(output.Length, phraseAt + phraseLength + 160);
+            if (IndexOfOrdinalIgnoreCase(output, "ERROR!", phraseAt + phraseLength) >= 0)
+                return false;
+
+            string window = output.Substring(windowStart, windowEnd - windowStart);
+            return ContainsBoundedId(window, canonical)
+                && TryParseBuildId(window, out buildId);
         }
 
         internal static bool EverySteamTargetSucceeded(
@@ -725,6 +747,26 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
 
             return builder.ToString();
+        }
+
+        static bool ContainsBoundedId(string text, string id)
+        {
+            int search = 0;
+            while (search < text.Length)
+            {
+                int found = text.IndexOf(id, search, StringComparison.Ordinal);
+                if (found < 0)
+                    return false;
+
+                int end = found + id.Length;
+                bool leftBounded = found == 0 || !char.IsDigit(text[found - 1]);
+                bool rightBounded = end >= text.Length || !char.IsDigit(text[end]);
+                if (leftBounded && rightBounded)
+                    return true;
+                search = found + 1;
+            }
+
+            return false;
         }
 
         static int IndexOfOrdinalIgnoreCase(string text, string value, int start)

@@ -163,6 +163,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
             state.CancelRequested = true;
             state.LatestMessage = state.Phase == BuildQueuePhase.Building
+                && state.BuildAttemptedIndex == state.CurrentTargetIndex
                 ? "The queue will stop after the current Unity build."
                 : "Cancelling the current operation.";
             SaveIgnoringFailure();

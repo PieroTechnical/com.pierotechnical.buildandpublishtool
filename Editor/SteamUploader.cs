@@ -369,7 +369,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
                     string buildId;
                     if (upload.ExitCode != 0
-                        || !SteamCommand.HasUploadSuccess(uploadOutput, out buildId))
+                        || !SteamCommand.HasUploadSuccess(uploadOutput, appId, out buildId))
                     {
                         onComplete(new PublishOperationResult
                         {

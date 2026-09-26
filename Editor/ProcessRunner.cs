@@ -33,12 +33,17 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             (\s*[:=]\s*|\s+)
             ([^\s""']+|""[^""]*""|'[^']*')",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        static readonly Regex BearerValue = new Regex(
+            @"(?i)\bbearer\s+\S+",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         internal static string Redact(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return text ?? string.Empty;
-            return SensitiveValue.Replace(text, "$1$2<redacted>");
+            return SensitiveValue.Replace(
+                BearerValue.Replace(text, "bearer <redacted>"),
+                "$1$2<redacted>");
         }
     }
 
@@ -348,46 +353,52 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         static bool ShouldComplete(ProcessOperation operation)
         {
+            bool stop = false;
+            bool complete;
             lock (operation.Gate)
+                complete = EvaluateCompletion(operation, out stop);
+
+            if (stop)
+                RequestTermination(operation);
+            return complete;
+        }
+
+        static bool EvaluateCompletion(ProcessOperation operation, out bool stop)
+        {
+            stop = false;
+            if (operation.Finished)
+                return true;
+            if (!operation.Started)
+                return operation.CancelRequested;
+            if (!string.IsNullOrEmpty(operation.StartError))
+                return true;
+
+            bool exited;
+            try
             {
-                if (operation.Finished)
-                    return true;
-                if (!operation.Started)
-                    return operation.CancelRequested;
-                if (!string.IsNullOrEmpty(operation.StartError))
-                    return true;
-
-                bool exited;
-                try
-                {
-                    exited = operation.Process.HasExited;
-                }
-                catch (Exception)
-                {
-                    return true;
-                }
-
-                if (exited)
-                {
-                    if (operation.TreeTerminationRequested)
-                        operation.TreeTerminationConfirmed = IsWindows();
-                    return true;
-                }
-
-                if (!operation.CancelRequested
-                    && !operation.TimedOut
-                    && (DateTime.UtcNow - operation.StartedUtc).TotalMilliseconds > operation.TimeoutMs)
-                {
-                    operation.TimedOut = true;
-                    RequestTermination(operation);
-                    return false;
-                }
-
-                return (operation.CancelRequested || operation.TimedOut)
-                    && operation.TerminationRequestedUtc != default(DateTime)
-                    && (DateTime.UtcNow - operation.TerminationRequestedUtc).TotalMilliseconds
-                        > TerminationGraceMilliseconds;
+                exited = operation.Process.HasExited;
             }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            if (exited)
+                return true;
+
+            if (!operation.CancelRequested
+                && !operation.TimedOut
+                && (DateTime.UtcNow - operation.StartedUtc).TotalMilliseconds > operation.TimeoutMs)
+            {
+                operation.TimedOut = true;
+                stop = operation.TerminationRequestedUtc == default(DateTime);
+                return false;
+            }
+
+            return (operation.CancelRequested || operation.TimedOut)
+                && operation.TerminationRequestedUtc != default(DateTime)
+                && (DateTime.UtcNow - operation.TerminationRequestedUtc).TotalMilliseconds
+                    > TerminationGraceMilliseconds;
         }
 
         static void RequestTermination(ProcessOperation operation)
@@ -400,19 +411,23 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 if (operation.TerminationRequestedUtc != default(DateTime))
                     return;
                 operation.TerminationRequestedUtc = DateTime.UtcNow;
+                operation.TreeTerminationRequested = true;
                 process = operation.Process;
             }
 
-            operation.TreeTerminationRequested = TryKillTree(process);
+            bool confirmed = TryKillTree(process);
+            lock (operation.Gate)
+                operation.TreeTerminationConfirmed = confirmed;
         }
 
         static bool TryKillTree(Process process)
         {
             try
             {
-                if (process == null || process.HasExited)
+                if (HasExited(process))
                     return true;
 
+                bool killedTree = false;
                 if (IsWindows())
                 {
                     try
@@ -426,8 +441,9 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                         };
                         using (Process killer = Process.Start(start))
                         {
-                            if (killer != null)
-                                killer.WaitForExit(1500);
+                            killedTree = killer != null
+                                && killer.WaitForExit(1500)
+                                && killer.ExitCode == 0;
                         }
                     }
                     catch (Exception)
@@ -436,9 +452,21 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                     }
                 }
 
-                if (!process.HasExited)
+                if (!HasExited(process))
                     process.Kill();
-                return IsWindows();
+                return killedTree && HasExited(process);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        static bool HasExited(Process process)
+        {
+            try
+            {
+                return process != null && process.HasExited;
             }
             catch (Exception)
             {
@@ -448,6 +476,57 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         static void Complete(ProcessOperation operation, bool invokeCallback)
         {
+            bool cancelled;
+            bool timedOut;
+            bool started;
+            string startError;
+            Process process;
+            lock (operation.Gate)
+            {
+                cancelled = operation.CancelRequested;
+                timedOut = operation.TimedOut;
+                started = operation.Started;
+                startError = operation.StartError;
+                process = operation.Process;
+            }
+
+            if (process != null && started && string.IsNullOrEmpty(startError))
+            {
+                try
+                {
+                    if (!cancelled && !timedOut)
+                    {
+                        process.WaitForExit();
+                    }
+                    else
+                    {
+                        try
+                        {
+                            process.CancelOutputRead();
+                        }
+                        catch (Exception)
+                        {
+                            // Output redirection may not have started.
+                        }
+
+                        try
+                        {
+                            process.CancelErrorRead();
+                        }
+                        catch (Exception)
+                        {
+                            // Error redirection may not have started.
+                        }
+
+                        process.WaitForExit(500);
+                    }
+                }
+                catch (Exception)
+                {
+                    // The handle may already be unavailable.
+                }
+            }
+
             ProcessRunResult result;
             lock (operation.Gate)
             {
@@ -467,27 +546,15 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                         : (long)Math.Max(0, (DateTime.UtcNow - operation.StartedUtc).TotalMilliseconds)
                 };
 
-                if (operation.Process != null)
+                if (process != null && !result.Cancelled && !result.TimedOut && HasExited(process))
                 {
                     try
                     {
-                        operation.Process.WaitForExit(100);
+                        result.ExitCode = process.ExitCode;
                     }
                     catch (Exception)
                     {
-                        // The handle may already be unavailable.
-                    }
-
-                    if (!result.Cancelled && !result.TimedOut)
-                    {
-                        try
-                        {
-                            result.ExitCode = operation.Process.ExitCode;
-                        }
-                        catch (Exception)
-                        {
-                            result.ExitCode = -1;
-                        }
+                        result.ExitCode = -1;
                     }
                 }
 
