@@ -24,6 +24,9 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         public const string NoDepotsMessage = "Steam did not list any depots for this app. Publish the depot setup on Steamworks, then try again.";
         public const string AppIdFileName = "steam_appid.txt";
 
+        // Steam replaces the desktop client when steamcmd signs in from the same private address, then that client will not reconnect.
+        const string SeparateSignInArguments = "-private_ip_override 10.255.255.1";
+
         public static bool TryParseSteamId(string text, out string id)
         {
             id = null;
@@ -119,22 +122,29 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         public static string LoginCheckArguments(string username)
         {
-            return "+login " + ButlerCommand.Quote(username) + " +quit";
+            return SeparateFromDesktopClient("+login " + ButlerCommand.Quote(username) + " +quit");
         }
 
         public static string InteractiveLoginArguments(string username)
         {
-            return "+login " + ButlerCommand.Quote(username);
+            return SeparateFromDesktopClient("+login " + ButlerCommand.Quote(username));
         }
 
         public static string UploadArguments(string username, string appScriptPath)
         {
-            return "+login " + ButlerCommand.Quote(username) + " +run_app_build " + ButlerCommand.Quote(appScriptPath) + " +quit";
+            return SeparateFromDesktopClient(
+                "+login " + ButlerCommand.Quote(username) + " +run_app_build " + ButlerCommand.Quote(appScriptPath) + " +quit");
         }
 
         public static string AppInfoArguments(string username, string appId)
         {
-            return "+login " + ButlerCommand.Quote(username) + " +app_info_print " + (appId ?? string.Empty) + " +quit";
+            return SeparateFromDesktopClient(
+                "+login " + ButlerCommand.Quote(username) + " +app_info_print " + (appId ?? string.Empty) + " +quit");
+        }
+
+        static string SeparateFromDesktopClient(string commands)
+        {
+            return SeparateSignInArguments + " " + commands;
         }
 
         public static bool IsDefaultBranch(string branch)

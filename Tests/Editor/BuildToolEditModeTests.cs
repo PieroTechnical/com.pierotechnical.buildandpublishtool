@@ -529,10 +529,14 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
         [Test]
         public void SteamUploadArgumentsQuoteTheUserAndScript()
         {
-            Assert.AreEqual("+login \"studio\" +quit", SteamCommand.LoginCheckArguments("studio"));
-            Assert.AreEqual("+login \"studio\"", SteamCommand.InteractiveLoginArguments("studio"));
             Assert.AreEqual(
-                "+login \"studio\" +run_app_build \"C:/Builds/My Game/app.vdf\" +quit",
+                "-private_ip_override 10.255.255.1 +login \"studio\" +quit",
+                SteamCommand.LoginCheckArguments("studio"));
+            Assert.AreEqual(
+                "-private_ip_override 10.255.255.1 +login \"studio\"",
+                SteamCommand.InteractiveLoginArguments("studio"));
+            Assert.AreEqual(
+                "-private_ip_override 10.255.255.1 +login \"studio\" +run_app_build \"C:/Builds/My Game/app.vdf\" +quit",
                 SteamCommand.UploadArguments("studio", "C:/Builds/My Game/app.vdf"));
         }
 
@@ -814,7 +818,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
         public void SteamAppInfoArgumentsDoNotIncludeAPassword()
         {
             Assert.AreEqual(
-                "+login \"studio\" +app_info_print 1000 +quit",
+                "-private_ip_override 10.255.255.1 +login \"studio\" +app_info_print 1000 +quit",
                 SteamCommand.AppInfoArguments("studio", "1000"));
             Assert.IsFalse(SteamCommand.AppInfoArguments("studio", "1000").Contains("password"));
         }
