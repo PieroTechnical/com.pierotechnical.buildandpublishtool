@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using NUnit.Framework;
 using UnityEditor;
 
@@ -340,6 +341,51 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
             }
             finally
             {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void ArtifactPromotionWaitsUntilALockedPlayerFileIsReleased()
+        {
+            string root = Path.Combine(
+                Path.GetTempPath(),
+                "pierobuild-promotion-lock-" + Guid.NewGuid().ToString("N"));
+            string temporary = Path.Combine(root, ".in-progress", "queue", "game");
+            string final = Path.Combine(root, "Game", "1.0.0", "windows");
+            Directory.CreateDirectory(temporary);
+            Directory.CreateDirectory(final);
+            string lockedPath = Path.Combine(temporary, "locked.txt");
+            File.WriteAllText(lockedPath, "locked");
+            File.WriteAllText(Path.Combine(final, "old.txt"), "old");
+            var stream = new FileStream(
+                lockedPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read);
+            var releaser = new Thread(() =>
+            {
+                Thread.Sleep(400);
+                stream.Dispose();
+            });
+            releaser.IsBackground = true;
+            releaser.Start();
+            try
+            {
+                string error;
+                Assert.IsTrue(SafeFileSystem.TryPromote(
+                    root,
+                    temporary,
+                    final,
+                    "queue",
+                    out error), error);
+                Assert.IsTrue(File.Exists(Path.Combine(final, "locked.txt")));
+                Assert.IsTrue(File.Exists(Path.Combine(final + ".previous", "old.txt")));
+            }
+            finally
+            {
+                releaser.Join();
                 if (Directory.Exists(root))
                     Directory.Delete(root, true);
             }
