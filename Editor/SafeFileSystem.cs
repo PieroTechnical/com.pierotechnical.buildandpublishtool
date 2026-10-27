@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace Pierotechnical.BuildAndUploadTool.Editor
 {
@@ -126,7 +127,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
             try
             {
-                DeleteTreeWithoutFollowingLinks(fullPath);
+                DeleteTreeWhenUnlocked(fullPath);
                 return true;
             }
             catch (Exception exception)
@@ -288,9 +289,9 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
                 WriteAtomic(journal, "moving-current\n");
                 if (Directory.Exists(final))
-                    Directory.Move(final, replacement);
+                    MoveDirectoryWhenUnlocked(final, replacement);
                 WriteAtomic(journal, "installing-new\n");
-                Directory.Move(temp, final);
+                MoveDirectoryWhenUnlocked(temp, final);
                 WriteAtomic(journal, "new-installed\n");
 
                 if (Directory.Exists(replacement))
@@ -300,7 +301,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                     {
                         return false;
                     }
-                    Directory.Move(replacement, previous);
+                    MoveDirectoryWhenUnlocked(replacement, previous);
                 }
 
                 TryDeleteFile(journal);
@@ -352,9 +353,9 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 if (!Directory.Exists(final))
                 {
                     if (Directory.Exists(replacement))
-                        Directory.Move(replacement, final);
+                        MoveDirectoryWhenUnlocked(replacement, final);
                     else if (Directory.Exists(previous))
-                        Directory.Move(previous, final);
+                        MoveDirectoryWhenUnlocked(previous, final);
                 }
                 else if (Directory.Exists(replacement))
                 {
@@ -363,7 +364,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                     {
                         return false;
                     }
-                    Directory.Move(replacement, previous);
+                    MoveDirectoryWhenUnlocked(replacement, previous);
                 }
 
                 TryDeleteFile(journal);
@@ -408,6 +409,63 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         static bool IsLink(string path)
         {
             return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+
+        const int DirectoryLockAttempts = 24;
+        const int DirectoryLockRetryMilliseconds = 500;
+
+        // BuildPlayer returns while usymtool still has player files open.
+        // Renaming or deleting that folder fails with access denied until the tool exits.
+        static bool IsTransientDirectoryLock(Exception exception)
+        {
+            if (exception is DirectoryNotFoundException)
+                return false;
+
+            int win32 = exception.HResult & 0xFFFF;
+            if (win32 == 5 || win32 == 32)
+                return true;
+
+            string message = exception.Message ?? string.Empty;
+            return message.IndexOf("denied", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        static void MoveDirectoryWhenUnlocked(string source, string destination)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    Directory.Move(source, destination);
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    if (attempt >= DirectoryLockAttempts || !IsTransientDirectoryLock(exception))
+                        throw;
+                    Thread.Sleep(DirectoryLockRetryMilliseconds);
+                }
+            }
+        }
+
+        static void DeleteTreeWhenUnlocked(string path)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    DeleteTreeWithoutFollowingLinks(path);
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    if (!Directory.Exists(path))
+                        return;
+                    if (attempt >= DirectoryLockAttempts || !IsTransientDirectoryLock(exception))
+                        throw;
+                    Thread.Sleep(DirectoryLockRetryMilliseconds);
+                }
+            }
         }
 
         static void DeleteTreeWithoutFollowingLinks(string path)
