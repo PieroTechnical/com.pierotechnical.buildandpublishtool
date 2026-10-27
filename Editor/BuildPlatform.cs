@@ -116,6 +116,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 plan.GameName,
                 plan.Version,
                 folderKey);
+            string workingDirectory = Directory.GetCurrentDirectory();
 
             try
             {
@@ -152,6 +153,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                     EditorUserBuildSettings.buildAppBundle = plan.AndroidAppBundle;
 
                 BuildReport report = BuildPipeline.BuildPlayer(options);
+                RestoreWorkingDirectory(workingDirectory);
                 if (report == null || report.summary.result != BuildResult.Succeeded)
                 {
                     int errors = report == null ? 0 : report.summary.totalErrors;
@@ -194,8 +196,31 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             finally
             {
                 EditorUtility.ClearProgressBar();
+                RestoreWorkingDirectory(workingDirectory);
                 if (!result.BuildSucceeded)
                     SafeFileSystem.TryDeleteDirectory(plan.OutputRoot, tempDir, out _);
+            }
+        }
+
+        static void RestoreWorkingDirectory(string workingDirectory)
+        {
+            if (string.IsNullOrEmpty(workingDirectory))
+                return;
+
+            try
+            {
+                if (!string.Equals(
+                    Directory.GetCurrentDirectory(),
+                    workingDirectory,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    Directory.SetCurrentDirectory(workingDirectory);
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "Could not restore the editor working directory: " + exception.Message);
             }
         }
 
