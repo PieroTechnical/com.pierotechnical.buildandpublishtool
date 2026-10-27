@@ -63,7 +63,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         [NonSerialized] BuildRunHistory runHistory;
         bool historyOpen;
 
-        [MenuItem("Tools/Build and Publish %#u")]
+        [MenuItem("Tools/Build and Publish/Open %#u", false, 0)]
         public static void ShowWindow()
         {
             GetWindow<BuildManager>("Build and Publish");
