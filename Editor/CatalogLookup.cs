@@ -91,7 +91,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
             scheduled = true;
             string captured = key;
-            EditorApplication.delayCall += () => Run(captured);
+            EditorTick.Schedule(() => Run(captured));
         }
 
         void Run(string captured)

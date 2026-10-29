@@ -31,12 +31,18 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
     internal static class BuildQueueController
     {
         const int SwitchTimeoutSeconds = 300;
+
+        // SwitchActiveBuildTarget becomes a script compilation on a later editor tick.
+        // Step does not enter restore while that compilation is running. If it has not
+        // started by the end of this grace, the switch is not happening.
+        const double RestoreSwitchGraceSeconds = 2d;
         static readonly string DomainToken = Guid.NewGuid().ToString("N");
 
         static BuildQueueState state;
         static bool loaded;
         static bool stepScheduled;
         static bool stepping;
+        static bool editorAwakeHeld;
         static IPublishOperation activeOperation;
         static string recoveryMessage;
 
@@ -53,7 +59,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
         static BuildQueueController()
         {
-            EditorApplication.delayCall += ResumeIfNeeded;
+            EditorTick.Schedule(ResumeIfNeeded);
         }
 
         internal static bool HasPending
@@ -151,6 +157,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             }
 
             BuildLog.Begin(state);
+            HoldEditorAwake();
             Schedule();
             return true;
         }
@@ -191,8 +198,11 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 return;
 
             RecoverInterruptedOperation();
-            if (!IsTerminal(state.Phase))
-                Schedule();
+            if (IsTerminal(state.Phase))
+                return;
+
+            HoldEditorAwake();
+            Schedule();
         }
 
         static void RecoverInterruptedOperation()
@@ -243,7 +253,25 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                 return;
 
             stepScheduled = true;
-            EditorApplication.delayCall += Step;
+            EditorTick.Schedule(Step);
+        }
+
+        static void HoldEditorAwake()
+        {
+            if (editorAwakeHeld)
+                return;
+
+            editorAwakeHeld = true;
+            EditorAwake.Hold();
+        }
+
+        static void ReleaseEditorAwake()
+        {
+            if (!editorAwakeHeld)
+                return;
+
+            editorAwakeHeld = false;
+            EditorAwake.Release();
         }
 
         static void Step()
@@ -265,7 +293,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
                     return;
                 }
 
-                if (state.CancelRequested && activeOperation == null && state.Phase != BuildQueuePhase.Building)
+                if (ShouldBeginCancellation(state.Phase, state.CancelRequested, activeOperation != null))
                 {
                     BeginFinalization(BuildQueuePhase.Cancelled, "Build queue cancelled.");
                     return;
@@ -682,57 +710,82 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         static void RestoreOriginalSettings()
         {
             EditorUserBuildSettings.buildAppBundle = state.Plan.OriginalAndroidAppBundle;
-            BuildTarget original = (BuildTarget)state.Plan.OriginalBuildTargetValue;
-            if (original != BuildTarget.NoTarget
-                && Enum.IsDefined(typeof(BuildTarget), state.Plan.OriginalBuildTargetValue)
-                && EditorUserBuildSettings.activeBuildTarget != original)
+            bool targetAlreadyActive = OriginalTargetIsActive();
+            bool switchRequested = state.SwitchAttemptedIndex == -2;
+            double secondsSinceRequest = SecondsSince(state.SwitchStartedUtc);
+            TargetRestoreDecision decision = DecideTargetRestore(
+                targetAlreadyActive,
+                switchRequested,
+                secondsSinceRequest);
+            if (decision == TargetRestoreDecision.RequestSwitch)
             {
-                if (state.SwitchAttemptedIndex != -2)
-                {
-                    state.SwitchAttemptedIndex = -2;
-                    state.SwitchStartedUtc = UtcNow();
-                    SaveIgnoringFailure();
-                    bool switched = EditorUserBuildSettings.SwitchActiveBuildTarget(
-                        PlatformCatalog.Group(original),
-                        original);
-                    if (!switched)
-                    {
-                        state.Notice = AppendNotice(
-                            state.Notice,
-                            "Could not restore the original active build target.");
-                        state.OriginalSettingsRestored = true;
-                    }
-                    else
-                    {
-                        Schedule();
-                        return;
-                    }
-                }
-                else
-                {
-                    DateTime started;
-                    DateTime.TryParse(
-                        state.SwitchStartedUtc,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.RoundtripKind,
-                        out started);
-                    if (started != default(DateTime)
-                        && (DateTime.UtcNow - started).TotalSeconds <= SwitchTimeoutSeconds)
-                    {
-                        Schedule();
-                        return;
-                    }
-
-                    state.Notice = AppendNotice(
-                        state.Notice,
-                        "Timed out restoring the original active build target.");
-                }
+                RequestOriginalTargetSwitch();
+                return;
             }
 
+            if (decision == TargetRestoreDecision.Wait)
+            {
+                Schedule();
+                return;
+            }
+
+            FinishRestore(targetAlreadyActive
+                ? null
+                : "Could not restore the original active build target.");
+        }
+
+        static void RequestOriginalTargetSwitch()
+        {
+            BuildTarget original = (BuildTarget)state.Plan.OriginalBuildTargetValue;
+            state.SwitchAttemptedIndex = -2;
+            state.SwitchStartedUtc = UtcNow();
+            state.LatestMessage = "Restoring the original build target.";
+            if (!PersistBeforeEffect())
+                return;
+
+            bool switched = EditorUserBuildSettings.SwitchActiveBuildTarget(
+                PlatformCatalog.Group(original),
+                original);
+            if (!switched)
+            {
+                FinishRestore("Could not restore the original active build target.");
+                return;
+            }
+
+            Schedule();
+        }
+
+        static void FinishRestore(string failureNotice)
+        {
+            if (!string.IsNullOrEmpty(failureNotice))
+                state.Notice = AppendNotice(state.Notice, failureNotice);
             state.OriginalSettingsRestored = true;
             state.Phase = BuildQueuePhase.Finalizing;
             SetPhaseMessage("Finalizing build report.");
             SaveAndSchedule();
+        }
+
+        static bool OriginalTargetIsActive()
+        {
+            int value = state.Plan.OriginalBuildTargetValue;
+            if (value == (int)BuildTarget.NoTarget || !Enum.IsDefined(typeof(BuildTarget), value))
+                return true;
+            return EditorUserBuildSettings.activeBuildTarget == (BuildTarget)value;
+        }
+
+        static double SecondsSince(string utc)
+        {
+            DateTime started;
+            if (!DateTime.TryParse(
+                utc,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out started))
+            {
+                return double.MaxValue;
+            }
+
+            return Math.Max(0d, (DateTime.UtcNow - started).TotalSeconds);
         }
 
         static void Finish()
@@ -750,6 +803,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             BuildLog.Complete(state, summary);
             SaveIgnoringFailure();
             NotifyChanged();
+            ReleaseEditorAwake();
             EditorUtility.DisplayDialog("Build", TrimForDialog(summary), "OK");
         }
 
@@ -971,6 +1025,42 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             return phase == BuildQueuePhase.Completed
                 || phase == BuildQueuePhase.Cancelled
                 || phase == BuildQueuePhase.Failed;
+        }
+
+        // BeginFinalization leaves CancelRequested set for a cancelled run. Restore and
+        // finalization must not treat that flag as a new cancellation, or the queue
+        // restarts "Restoring Editor settings" on every tick.
+        internal static bool ShouldBeginCancellation(
+            BuildQueuePhase phase,
+            bool cancelRequested,
+            bool operationActive)
+        {
+            if (!cancelRequested || operationActive || IsTerminal(phase))
+                return false;
+            return phase != BuildQueuePhase.Building
+                && phase != BuildQueuePhase.RestoringTarget
+                && phase != BuildQueuePhase.Finalizing;
+        }
+
+        internal enum TargetRestoreDecision
+        {
+            RequestSwitch,
+            Wait,
+            Finish
+        }
+
+        internal static TargetRestoreDecision DecideTargetRestore(
+            bool targetAlreadyActive,
+            bool switchRequested,
+            double secondsSinceRequest)
+        {
+            if (targetAlreadyActive)
+                return TargetRestoreDecision.Finish;
+            if (!switchRequested)
+                return TargetRestoreDecision.RequestSwitch;
+            if (secondsSinceRequest < RestoreSwitchGraceSeconds)
+                return TargetRestoreDecision.Wait;
+            return TargetRestoreDecision.Finish;
         }
 
         static long ElapsedSeconds(string startedUtc, string finishedUtc)

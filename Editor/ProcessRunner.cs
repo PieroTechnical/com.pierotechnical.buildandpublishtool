@@ -170,6 +170,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
         static readonly List<ProcessOperation> Operations = new List<ProcessOperation>();
         static readonly HashSet<string> ActiveTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         static bool updateHooked;
+        static bool editorAwakeHeld;
 
         internal static IPublishOperation RunAsync(
             string fileName,
@@ -219,6 +220,7 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
             updateHooked = true;
             EditorApplication.update += Poll;
             AssemblyReloadEvents.beforeAssemblyReload += CancelForReload;
+            HoldEditorAwake();
         }
 
         static void RemoveUpdateHookIfIdle()
@@ -232,6 +234,25 @@ namespace Pierotechnical.BuildAndUploadTool.Editor
 
             EditorApplication.update -= Poll;
             AssemblyReloadEvents.beforeAssemblyReload -= CancelForReload;
+            ReleaseEditorAwake();
+        }
+
+        static void HoldEditorAwake()
+        {
+            if (editorAwakeHeld)
+                return;
+
+            editorAwakeHeld = true;
+            EditorAwake.Hold();
+        }
+
+        static void ReleaseEditorAwake()
+        {
+            if (!editorAwakeHeld)
+                return;
+
+            editorAwakeHeld = false;
+            EditorAwake.Release();
         }
 
         static void StartPendingOperations()

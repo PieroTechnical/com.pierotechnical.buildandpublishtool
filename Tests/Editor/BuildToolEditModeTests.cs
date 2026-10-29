@@ -510,6 +510,52 @@ namespace Pierotechnical.BuildAndUploadTool.Editor.Tests
         }
 
         [Test]
+        public void CancellationDoesNotRestartWhileRestoringOrFinalizing()
+        {
+            Assert.IsTrue(BuildQueueController.ShouldBeginCancellation(
+                BuildQueuePhase.PublishingArtifact,
+                true,
+                false));
+            Assert.IsFalse(BuildQueueController.ShouldBeginCancellation(
+                BuildQueuePhase.Building,
+                true,
+                false));
+            Assert.IsFalse(BuildQueueController.ShouldBeginCancellation(
+                BuildQueuePhase.RestoringTarget,
+                true,
+                false));
+            Assert.IsFalse(BuildQueueController.ShouldBeginCancellation(
+                BuildQueuePhase.Finalizing,
+                true,
+                false));
+            Assert.IsFalse(BuildQueueController.ShouldBeginCancellation(
+                BuildQueuePhase.PublishingArtifact,
+                true,
+                true));
+            Assert.IsFalse(BuildQueueController.ShouldBeginCancellation(
+                BuildQueuePhase.Cancelled,
+                true,
+                false));
+        }
+
+        [Test]
+        public void TargetRestoreFinishesWhenTheSwitchDoesNotStart()
+        {
+            Assert.AreEqual(
+                BuildQueueController.TargetRestoreDecision.Finish,
+                BuildQueueController.DecideTargetRestore(true, false, 0d));
+            Assert.AreEqual(
+                BuildQueueController.TargetRestoreDecision.RequestSwitch,
+                BuildQueueController.DecideTargetRestore(false, false, 0d));
+            Assert.AreEqual(
+                BuildQueueController.TargetRestoreDecision.Wait,
+                BuildQueueController.DecideTargetRestore(false, true, 0.5d));
+            Assert.AreEqual(
+                BuildQueueController.TargetRestoreDecision.Finish,
+                BuildQueueController.DecideTargetRestore(false, true, 2d));
+        }
+
+        [Test]
         public void QueueRejectsCallbacksFromAnOldOperationOrRun()
         {
             var state = new BuildQueueState
